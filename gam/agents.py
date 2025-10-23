@@ -4,7 +4,7 @@
 """
 - Memory == list[str] of abstracts (no events/tags).
 - MemoryAgent exposes only: memorize(message) -> MemoryUpdate
-- ResearchAgent uses explicit Integrate(search_results, temp_memory) -> temp_memory.
+- ResearchAgent uses explicit research.
 Prompts are placeholders.
 """
 
