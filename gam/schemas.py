@@ -19,69 +19,69 @@ from typing import Any, Dict, List, Optional, Protocol
 
 class MemoryState(BaseModel):
     """Long-term memory: only abstracts list."""
-    abstracts: List[str] = Field(default_factory=list, description="记忆摘要列表")
+    abstracts: List[str] = Field(default_factory=list, description="List of memory abstracts")
 
 class Page(BaseModel):
-    """页面数据"""
-    header: str = Field(..., description="页面标题")
-    content: str = Field(..., description="页面内容")
-    meta: Dict[str, Any] = Field(default_factory=dict, description="元数据")
+    """Page data structure"""
+    header: str = Field(..., description="Page header")
+    content: str = Field(..., description="Page content")
+    meta: Dict[str, Any] = Field(default_factory=dict, description="Metadata")
 
 class MemoryUpdate(BaseModel):
-    """记忆更新"""
-    new_state: MemoryState = Field(..., description="新的记忆状态")
-    new_page: Page = Field(..., description="新的页面")
-    debug: Dict[str, Any] = Field(default_factory=dict, description="调试信息")
+    """Memory update result"""
+    new_state: MemoryState = Field(..., description="Updated memory state")
+    new_page: Page = Field(..., description="New page added")
+    debug: Dict[str, Any] = Field(default_factory=dict, description="Debug information")
 
 class SearchPlan(BaseModel):
-    """搜索计划"""
-    info_needs: List[str] = Field(default_factory=list, description="信息需求列表")
-    tools: List[str] = Field(default_factory=list, description="使用的工具")
-    keyword_collection: List[str] = Field(default_factory=list, description="关键词集合")
-    vector_queries: List[str] = Field(default_factory=list, description="向量查询")
-    page_indices: List[int] = Field(default_factory=list, description="页面索引")
+    """Search planning structure"""
+    info_needs: List[str] = Field(default_factory=list, description="List of information needs")
+    tools: List[str] = Field(default_factory=list, description="Tools to use for searching")
+    keyword_collection: List[str] = Field(default_factory=list, description="Keywords to search for")
+    vector_queries: List[str] = Field(default_factory=list, description="Semantic search queries")
+    page_indices: List[int] = Field(default_factory=list, description="Specific page indices to retrieve")
 
 class ToolResult(BaseModel):
-    """工具结果"""
-    tool: str = Field(..., description="工具名称")
-    inputs: Dict[str, Any] = Field(..., description="输入参数")
-    outputs: Any = Field(..., description="输出结果")
-    error: Optional[str] = Field(None, description="错误信息")
+    """Tool execution result"""
+    tool: str = Field(..., description="Tool name")
+    inputs: Dict[str, Any] = Field(..., description="Input parameters")
+    outputs: Any = Field(..., description="Output results")
+    error: Optional[str] = Field(None, description="Error message if any")
 
 class Hit(BaseModel):
-    """搜索结果命中"""
-    page_index: Optional[int] = Field(None, description="页面索引")
-    snippet: str = Field(..., description="文本片段")
-    source: str = Field(..., description="来源类型")
-    meta: Dict[str, Any] = Field(default_factory=dict, description="元数据")
+    """Search result hit"""
+    page_index: Optional[int] = Field(None, description="Page index in store")
+    snippet: str = Field(..., description="Text snippet from the source")
+    source: str = Field(..., description="Source type (keyword/vector/page_index/tool)")
+    meta: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
 
 class SourceInfo(BaseModel):
-    """来源信息"""
-    page_index: Optional[int] = Field(None, description="页面索引")
-    snippet: str = Field(..., description="文本片段")
-    source: str = Field(..., description="来源类型")
+    """Source information"""
+    page_index: Optional[int] = Field(None, description="Page index in store")
+    snippet: str = Field(..., description="Text snippet from the source")
+    source: str = Field(..., description="Source type")
 
 class Result(BaseModel):
-    """搜索结果"""
-    content: str = Field("", description="整合的内容")
-    sources: List[SourceInfo] = Field(default_factory=list, description="来源列表")
+    """Search and integration result"""
+    content: str = Field("", description="Integrated content about the question")
+    sources: List[SourceInfo] = Field(default_factory=list, description="List of sources used")
 
 class ReflectionDecision(BaseModel):
-    """反思决策"""
-    enough: bool = Field(..., description="信息是否足够")
-    new_request: Optional[str] = Field(None, description="新的请求")
+    """Reflection decision"""
+    enough: bool = Field(..., description="Whether information is sufficient")
+    new_request: Optional[str] = Field(None, description="New request if information is insufficient")
 
 class ResearchOutput(BaseModel):
-    """研究输出"""
-    integrated_memory: str = Field(..., description="整合的记忆")
-    raw_memory: Dict[str, Any] = Field(..., description="原始记忆数据")
+    """Research output"""
+    integrated_memory: str = Field(..., description="Integrated memory content")
+    raw_memory: Dict[str, Any] = Field(..., description="Raw memory data")
 
 class GenerateRequests(BaseModel):
-    """生成请求"""
-    new_requests: List[str] = Field(..., description="新的请求列表")
+    """Generate new requests"""
+    new_requests: List[str] = Field(..., description="List of new search requests")
 
 # =============================
-# Protocols (接口定义)
+# Protocols (Interface definitions)
 # =============================
 
 class MemoryStore(Protocol):
@@ -108,7 +108,7 @@ class ToolRegistry(Protocol):
     def run_many(self, tool_inputs: Dict[str, Dict[str, Any]]) -> List[ToolResult]: ...
 
 # =============================
-# In-memory default stores
+# In-memory default stores (for quick start)
 # =============================
 
 class InMemoryMemoryStore:
@@ -146,10 +146,10 @@ class InMemoryPageStore:
         return list(self._pages)
 
 # =============================
-# 自动生成 JSON Schema
+# Auto-generated JSON Schema
 # =============================
 
-# 为 LLM 调用生成 JSON Schema
+# JSON Schema for LLM calls
 PLANNING_SCHEMA = SearchPlan.model_json_schema()
 INTEGRATE_SCHEMA = Result.model_json_schema()
 INFO_CHECK_SCHEMA = ReflectionDecision.model_json_schema()
