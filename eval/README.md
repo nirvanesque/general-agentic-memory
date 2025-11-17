@@ -1,55 +1,55 @@
 # GAM Benchmarks
 
-GAM (General Agentic Memory) 框架的评估基准套件。
+Evaluation benchmark suite for the GAM (General Agentic Memory) framework.
 
-## 📋 支持的数据集
+## 📋 Supported Datasets
 
-| 数据集 | 类型 | 描述 | 指标 |
-|--------|------|------|------|
-| **HotpotQA** | 多跳问答 | 需要跨多个文档推理的问答任务 | F1 |
-| **NarrativeQA** | 叙事问答 | 基于长篇故事和文档的阅读理解 | F1 |
-| **LoCoMo** | 对话记忆 | 长对话历史中的记忆检索 | F1, BLEU-1 |
-| **RULER** | 长上下文 | 测试长上下文理解能力的多种任务 | Accuracy |
+| Dataset | Type | Description | Metrics |
+|---------|------|-------------|---------|
+| **HotpotQA** | Multi-hop QA | Question answering task requiring reasoning across multiple documents | F1 |
+| **NarrativeQA** | Narrative QA | Reading comprehension based on long stories and documents | F1 |
+| **LoCoMo** | Conversation Memory | Memory retrieval in long conversation history | F1, BLEU-1 |
+| **RULER** | Long Context | Multiple tasks testing long-context understanding | Accuracy |
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-### 1. 安装依赖
+### 1. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. 准备数据
+### 2. Prepare Data
 
 ```bash
-# 下载数据集到 data/ 目录
+# Download datasets to data/ directory
 mkdir -p data
 
 # HotpotQA
-# 下载并放置到 data/hotpotqa.json
+# Download and place at data/hotpotqa.json
 
-# NarrativeQA (会自动从 HuggingFace 下载)
+# NarrativeQA (will be automatically downloaded from HuggingFace)
 
 # LoCoMo
-# 下载并放置到 data/locomo.json
+# Download and place at data/locomo.json
 
 # RULER
-# 下载并放置到 data/ruler.jsonl
+# Download and place at data/ruler.jsonl
 ```
 
-### 3. 设置环境变量
+### 3. Set Environment Variables
 
 ```bash
-# 如果使用 OpenAI API
+# If using OpenAI API
 export OPENAI_API_KEY="your_api_key_here"
 
-# 可选：使用自定义 API endpoint
+# Optional: Use custom API endpoint
 export OPENAI_API_BASE="https://your-api-endpoint.com/v1"
 ```
 
-### 4. 运行评估
+### 4. Run Evaluation
 
-#### 方式一：使用 Shell 脚本（推荐）
+#### Method 1: Using Shell Scripts (Recommended)
 
 ```bash
 # HotpotQA
@@ -64,15 +64,15 @@ bash scripts/eval_locomo.sh
 # RULER
 bash scripts/eval_ruler.sh --dataset-name niah_single_1
 
-# 运行所有评估
+# Run all evaluations
 bash scripts/eval_all.sh
 ```
 
-#### 方式二：使用 Python CLI
+#### Method 2: Using Python CLI
 
 ```bash
 # HotpotQA
-python -m benchmarks.run \
+python -m eval.run \
     --dataset hotpotqa \
     --data-path data/hotpotqa.json \
     --generator openai \
@@ -80,91 +80,91 @@ python -m benchmarks.run \
     --retriever dense
 
 # NarrativeQA
-python -m benchmarks.run \
+python -m eval.run \
     --dataset narrativeqa \
     --data-path narrativeqa \
     --max-samples 100
 
 # LoCoMo
-python -m benchmarks.run \
+python -m eval.run \
     --dataset locomo \
     --data-path data/locomo.json
 
 # RULER
-python -m benchmarks.run \
+python -m eval.run \
     --dataset ruler \
     --data-path data/ruler.jsonl \
     --dataset-name niah_single_1
 ```
 
-## 📊 配置选项
+## 📊 Configuration Options
 
-### 生成器 (Generator)
+### Generator
 
 ```bash
-# 使用 OpenAI API
+# Use OpenAI API
 --generator openai --model gpt-4 --api-key YOUR_KEY
 
-# 使用 VLLM (本地模型)
+# Use VLLM (Local models)
 --generator vllm --model meta-llama/Llama-3-8B
 ```
 
-### 检索器 (Retriever)
+### Retriever
 
 ```bash
-# Dense Retriever (语义检索，推荐)
+# Dense Retriever (Semantic retrieval, recommended)
 --retriever dense --embedding-model BAAI/bge-base-en-v1.5
 
-# BM25 Retriever (关键词检索)
+# BM25 Retriever (Keyword retrieval)
 --retriever bm25
 
-# Index Retriever (简单索引)
+# Index Retriever (Simple index)
 --retriever index
 ```
 
-### 评估参数
+### Evaluation Parameters
 
 ```bash
-# 限制样本数量（快速测试）
+# Limit sample count (quick test)
 --max-samples 50
 
-# 调整文本块大小
+# Adjust text chunk size
 --chunk-size 2000
 
-# 调整检索数量
+# Adjust retrieval count
 --top-k 5
 
-# 设置输出目录
+# Set output directory
 --output-dir outputs/my_experiment
 
-# 静默模式
+# Quiet mode
 --quiet
 
-# 不保存预测结果
+# Don't save predictions
 --no-save
 ```
 
-## 📁 项目结构
+## 📁 Project Structure
 
 ```
-benchmarks/
-├── __init__.py              # 包初始化
-├── __main__.py              # 允许 python -m benchmarks.run
-├── run.py                   # CLI 入口
-├── README.md                # 本文档
-├── datasets/                # 数据集模块
+eval/
+├── __init__.py              # Package initialization
+├── __main__.py              # Allows python -m eval.run
+├── run.py                   # CLI entry point
+├── README.md                # This document
+├── datasets/                # Dataset modules
 │   ├── __init__.py
-│   ├── base.py             # 基类
-│   ├── hotpotqa.py         # HotpotQA 实现
-│   ├── narrativeqa.py      # NarrativeQA 实现
-│   ├── locomo.py           # LoCoMo 实现
-│   └── ruler.py            # RULER 实现
-└── utils/                   # 工具模块
+│   ├── base.py             # Base class
+│   ├── hotpotqa.py         # HotpotQA implementation
+│   ├── narrativeqa.py      # NarrativeQA implementation
+│   ├── locomo.py           # LoCoMo implementation
+│   └── ruler.py            # RULER implementation
+└── utils/                   # Utility modules
     ├── __init__.py
-    ├── chunking.py         # 文本切分工具
-    └── metrics.py          # 评估指标工具
+    ├── chunking.py         # Text chunking utilities
+    └── metrics.py          # Evaluation metrics utilities
 
-scripts/                     # Shell 脚本
+scripts/                     # Shell scripts
 ├── eval_hotpotqa.sh
 ├── eval_narrativeqa.sh
 ├── eval_locomo.sh
@@ -172,58 +172,58 @@ scripts/                     # Shell 脚本
 └── eval_all.sh
 ```
 
-## 🔧 自定义评估
+## 🔧 Custom Evaluation
 
-### 方法一：修改 Shell 脚本参数
+### Method 1: Modify Shell Script Parameters
 
-编辑 `scripts/eval_*.sh` 文件中的默认参数：
+Edit default parameters in `scripts/eval_*.sh` files:
 
 ```bash
-# 修改默认模型
+# Change default model
 MODEL="gpt-3.5-turbo"
 
-# 修改默认检索器
+# Change default retriever
 RETRIEVER="bm25"
 
-# 修改默认输出目录
+# Change default output directory
 OUTPUT_DIR="outputs/my_experiment"
 ```
 
-### 方法二：创建自定义 Benchmark
+### Method 2: Create Custom Benchmark
 
 ```python
-from benchmarks.datasets.base import BaseBenchmark, BenchmarkConfig
+from eval.datasets.base import BaseBenchmark, BenchmarkConfig
 
 class MyBenchmark(BaseBenchmark):
     def load_data(self):
-        # 实现数据加载逻辑
+        # Implement data loading logic
         pass
     
     def prepare_chunks(self, sample):
-        # 实现文本切分逻辑
+        # Implement text chunking logic
         pass
     
     def extract_question(self, sample):
-        # 提取问题
+        # Extract question
         pass
     
     def extract_ground_truth(self, sample):
-        # 提取标准答案
+        # Extract ground truth
         pass
     
     def compute_metrics(self, predictions, ground_truths):
-        # 计算评估指标
+        # Compute evaluation metrics
         pass
 
-# 使用
+# Usage
 config = BenchmarkConfig(data_path="my_data.json")
 benchmark = MyBenchmark(config)
 results = benchmark.run()
 ```
 
-## 📈 结果输出
+## 📈 Result Output
 
-评估完成后，结果会保存在 `outputs/` 目录：
+After evaluation completes, results are saved in the `outputs/` directory:
 
 ```
 outputs/
@@ -234,12 +234,12 @@ outputs/
 └── ...
 ```
 
-结果文件包含：
-- 配置信息
-- 评估指标
-- 每个样本的预测和标准答案
+Result files contain:
+- Configuration information
+- Evaluation metrics
+- Predictions and ground truth for each sample
 
-示例结果：
+Example result:
 
 ```json
 {
@@ -262,64 +262,63 @@ outputs/
 }
 ```
 
-## 🐛 故障排除
+## 🐛 Troubleshooting
 
 ### 1. ImportError: No module named 'gam'
 
-确保已安装 GAM 框架：
+Ensure GAM framework is installed:
 
 ```bash
 pip install -e .
 ```
 
-### 2. OpenAI API 错误
+### 2. OpenAI API Error
 
-检查 API Key 是否正确设置：
+Check if API Key is correctly set:
 
 ```bash
 echo $OPENAI_API_KEY
 ```
 
-### 3. CUDA Out of Memory (使用 VLLM 时)
+### 3. CUDA Out of Memory (when using VLLM)
 
-减小批处理大小或使用更小的模型：
+Reduce batch size or use a smaller model:
 
 ```bash
---model meta-llama/Llama-3-8B  # 使用更小的模型
+--model meta-llama/Llama-3-8B  # Use smaller model
 ```
 
-### 4. 下载 NLTK 数据失败
+### 4. NLTK Data Download Failed
 
-手动下载：
+Manual download:
 
 ```python
 import nltk
 nltk.download('punkt_tab')
 ```
 
-## 📝 贡献指南
+## 📝 Contributing
 
-欢迎贡献新的数据集支持！
+Contributions for new dataset support are welcome!
 
-1. 在 `benchmarks/datasets/` 创建新文件
-2. 继承 `BaseBenchmark` 类
-3. 实现必要的方法
-4. 添加对应的 Shell 脚本
-5. 更新本 README
+1. Create a new file in `eval/datasets/`
+2. Inherit from `BaseBenchmark` class
+3. Implement necessary methods
+4. Add corresponding Shell script
+5. Update this README
 
-## 📄 许可证
+## 📄 License
 
-本项目遵循与 GAM 框架相同的许可证。
+This project follows the same license as the GAM framework.
 
-## 🙏 致谢
+## 🙏 Acknowledgments
 
-感谢以下数据集的作者：
+Thanks to the authors of the following datasets:
 - HotpotQA
 - NarrativeQA
 - LoCoMo
 - RULER
 
-## 📮 联系方式
+## 📮 Contact
 
-如有问题或建议，请提交 Issue 或 Pull Request。
-
+For questions or suggestions, please submit an Issue or Pull Request.
