@@ -8,11 +8,8 @@ A general memory system for agents, powered by deep-research
 
 **General Agentic Memory (GAM)** provides a next-generation memory framework for AI agents, combining long-term retention with dynamic reasoning. Following the Just-in-Time (JIT) principle, it preserves full contextual fidelity offline while performing deep research online to build adaptive, high-utility context. With its dual-agent architecture—Memorizer and Researcher—GAM integrates structured memory with iterative retrieval and reflection, achieving state-of-the-art performance across LoCoMo, HotpotQA, LongBench v2, and LongCodeBench benchmarks.
 
-- **Paper**: 
-- **Website**: 
-- **Documentation**: 
-- **YouTube Video**: 
-
+- **Paper**: https://arxiv.org/abs/2511.18423
+  
 <span id='features'/>
 
 ## ✨ Key Features
@@ -282,6 +279,15 @@ More detailed documentation is coming soon 🚀. Check these resources in the me
 **If you find this project useful, please consider citing our paper:**
 
 ```bibtex
+@misc{yan2025generalagenticmemorydeep,
+      title={General Agentic Memory Via Deep Research}, 
+      author={B. Y. Yan and Chaofan Li and Hongjin Qian and Shuqi Lu and Zheng Liu},
+      year={2025},
+      eprint={2511.18423},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2511.18423}, 
+}
 ```
 
 <span id='community'/>
