@@ -8,10 +8,7 @@
 
 **General Agentic Memory (GAM)** 为 AI 智能体提供下一代记忆框架，将长期记忆与动态推理相结合。遵循即时(JIT)原则，在离线时保持完整的上下文保真度，在线时执行深度研究以构建自适应、高效用的上下文。通过其双智能体架构——记忆构建器和研究者——GAM 集成了结构化记忆与迭代检索和反思，在 LoCoMo、HotpotQA、LongBench v2 和 LongCodeBench 等基准测试中达到了最先进的性能。
 
-- **论文**: 
-- **网站**: 
-- **文档**: 
-- **YouTube 视频**: 
+- **论文**: https://arxiv.org/abs/2511.18423
 
 <span id='features'/>
 
@@ -282,11 +279,14 @@ python -m eval.run \
 **如果你觉得这个项目有用，请考虑引用我们的论文：**
 
 ```bibtex
-@article{gam2024,
-  title={General Agentic Memory: Just-in-Time Memory for AI Agents},
-  author={Your Name},
-  journal={arXiv preprint},
-  year={2024}
+@misc{yan2025generalagenticmemorydeep,
+      title={General Agentic Memory Via Deep Research}, 
+      author={B. Y. Yan and Chaofan Li and Hongjin Qian and Shuqi Lu and Zheng Liu},
+      year={2025},
+      eprint={2511.18423},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2511.18423}, 
 }
 ```
 
