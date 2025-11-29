@@ -149,7 +149,7 @@ def research_example(memory_store, page_store):
         
         dense_config = DenseRetrieverConfig(
             index_dir=dense_index_dir,
-            model_path="BAAI/bge-m3"
+            model_name="BAAI/bge-m3"
         )
         dense_retriever = DenseRetriever(dense_config.__dict__)
         dense_retriever.build(page_store)

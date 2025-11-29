@@ -94,7 +94,7 @@ def custom_api_endpoint_example():
     
     print("✅ 配置了自定义 API 端点")
     print(f"   端点: {gen_config.base_url}")
-    print(f"   模型: {gen_config.model}\n")
+    print(f"   模型: {gen_config.model_name}\n")
     
     return True
 
@@ -140,9 +140,8 @@ def vllm_local_model_example():
         for doc in documents:
             memory_agent.memorize(doc)
         
-        memory_state = memory_agent.get_memory_state()
-        print(f"✅ 构建了 {len(memory_state.events)} 个记忆事件")
-        print(f"✅ 生成了 {len(memory_state.abstracts)} 个记忆摘要\n")
+        memory_state = memory_agent.load()
+        print(f"✅ 构建了 {len(memory_state.abstracts)} 个记忆摘要\n")
         
         return True
         
