@@ -71,7 +71,7 @@ from gam import MemoryAgent, OpenAIGenerator, OpenAIGeneratorConfig
 
 # 1. 创建生成器
 gen_config = OpenAIGeneratorConfig(model="gpt-4o-mini")
-generator = OpenAIGenerator(gen_config)
+generator = OpenAIGenerator(gen_config.__dict__)
 
 # 2. 创建记忆代理
 memory_agent = MemoryAgent(generator=generator, ...)
@@ -80,7 +80,7 @@ memory_agent = MemoryAgent(generator=generator, ...)
 memory_agent.memorize("你的文本内容")
 
 # 4. 获取记忆状态
-memory_state = memory_agent.load()
+memory_state = memory_store.load()
 print(f"构建了 {len(memory_state.abstracts)} 个记忆摘要")
 ```
 

@@ -42,7 +42,7 @@ def basic_memory_example():
         temperature=0.3,
         max_tokens=256
     )
-    generator = OpenAIGenerator(gen_config)
+    generator = OpenAIGenerator(gen_config.__dict__)
     
     # 2. 创建存储
     memory_store = InMemoryMemoryStore()
@@ -79,7 +79,7 @@ def basic_memory_example():
         memory_agent.memorize(doc)
     
     # 6. 查看记忆状态
-    memory_state = memory_agent.load()
+    memory_state = memory_store.load()
     print(f"\n✅ 成功构建记忆:")
     print(f"  - 记忆摘要数: {len(memory_state.abstracts)}")
         
@@ -99,7 +99,7 @@ def research_example(memory_store, page_store):
         temperature=0.3,
         max_tokens=2048
     )
-    generator = OpenAIGenerator(gen_config)
+    generator = OpenAIGenerator(gen_config.__dict__)
     
     # 2. 创建多个检索器
     retrievers = {}
@@ -172,7 +172,7 @@ def research_example(memory_store, page_store):
     question = "机器学习和深度学习有什么关键区别？"
     print(f"\n研究问题: {question}\n")
     
-    research_result = research_agent.research(question=question)
+    research_result = research_agent.research(question)
     research_summary = research_result.integrated_memory
     
     # 5. 显示结果

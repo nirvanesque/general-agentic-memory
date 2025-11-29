@@ -72,16 +72,35 @@ class DenseRetriever(AbsRetriever):
                 print(f"[DenseRetriever] 警告: 无法连接到 API 服务: {e}")
         else:
             # 本地模式：加载模型
-            print(f"[DenseRetriever] 使用本地模式，加载模型: {config.get('model_name')}")
-            self.model = FlagAutoModel.from_finetuned(
-                config.get("model_name"),
-                normalize_embeddings=config.get("normalize_embeddings", True),
-                pooling_method=config.get("pooling_method", "cls"),
-                trust_remote_code=config.get("trust_remote_code", True),
-                query_instruction_for_retrieval=config.get("query_instruction_for_retrieval"),
-                use_fp16=config.get("use_fp16", False),
-                devices=config.get("devices", "cuda:0")
-            )
+            model_name = config.get("model_name")
+            print(f"[DenseRetriever] 使用本地模式，加载模型: {model_name}")
+            try:
+                # 检测是否有可用的 GPU
+                import torch
+                has_cuda = torch.cuda.is_available()
+                default_device = "cuda:0" if has_cuda else "cpu"
+                devices = config.get("devices", default_device)
+                
+                self.model = FlagAutoModel.from_finetuned(
+                    model_name,
+                    normalize_embeddings=config.get("normalize_embeddings", True),
+                    pooling_method=config.get("pooling_method", "cls"),
+                    trust_remote_code=config.get("trust_remote_code", True),
+                    query_instruction_for_retrieval=config.get("query_instruction_for_retrieval"),
+                    use_fp16=config.get("use_fp16", False),
+                    devices=devices
+                )
+                if self.model is None:
+                    raise RuntimeError(f"模型加载失败：FlagAutoModel.from_finetuned() 返回了 None")
+                print(f"[DenseRetriever] 模型加载成功，使用设备: {devices}")
+            except Exception as e:
+                error_msg = (
+                    f"[DenseRetriever] 模型加载失败: {e}\n"
+                    f"  模型名称: {model_name}\n"
+                    f"  请检查: 1) 模型名称是否正确 2) 网络连接是否正常 3) 是否有足够的磁盘空间"
+                )
+                print(error_msg)
+                raise RuntimeError(error_msg) from e
 
 
     # ---------- 内部小工具 ----------
@@ -197,6 +216,8 @@ class DenseRetriever(AbsRetriever):
             return self._encode_via_api(texts, encode_type="corpus")
         else:
             # 本地模式
+            if self.model is None:
+                raise RuntimeError("DenseRetriever 模型未初始化，无法编码。请检查模型加载是否成功。")
             return self.model.encode_corpus(
                 texts,
                 batch_size=self.config.get("batch_size", 32),

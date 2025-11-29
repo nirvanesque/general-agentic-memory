@@ -36,7 +36,7 @@ def openai_api_example():
     )
     
     # 2. 创建 Generator
-    generator = OpenAIGenerator(gen_config)
+    generator = OpenAIGenerator(gen_config.__dict__)
     
     # 3. 创建存储
     memory_store = InMemoryMemoryStore()
@@ -60,7 +60,7 @@ def openai_api_example():
     for doc in documents:
         memory_agent.memorize(doc)
     
-    memory_state = memory_agent.load()
+    memory_state = memory_store.load()
     print(f"✅ 构建了 {len(memory_state.abstracts)} 个记忆摘要\n")
     
     return True
@@ -79,7 +79,7 @@ def custom_api_endpoint_example():
     )
     
     # 2. 创建 Generator
-    generator = OpenAIGenerator(gen_config)
+    generator = OpenAIGenerator(gen_config.__dict__)
     
     # 3. 创建存储
     memory_store = InMemoryMemoryStore()
@@ -116,7 +116,7 @@ def vllm_local_model_example():
         )
         
         # 2. 创建 Generator
-        generator = VLLMGenerator(gen_config)
+        generator = VLLMGenerator(gen_config.__dict__)
         
         # 3. 创建存储
         memory_store = InMemoryMemoryStore()
