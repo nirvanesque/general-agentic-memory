@@ -147,6 +147,10 @@ from gam import (
     OpenAIGeneratorConfig,
     InMemoryMemoryStore,
     InMemoryPageStore,
+    IndexRetriever,
+    IndexRetrieverConfig,
+    BM25Retriever,
+    BM25RetrieverConfig,
     DenseRetriever,
     DenseRetrieverConfig,
 )
@@ -240,7 +244,7 @@ research_agent_kwargs = {
     "page_store": page_store,
     "memory_store": memory_store,
     "retrievers": retrievers,
-    "generator": research_generator,
+    "generator": generator,
     "max_iters": 5
 }
 

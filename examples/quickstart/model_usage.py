@@ -60,9 +60,8 @@ def openai_api_example():
     for doc in documents:
         memory_agent.memorize(doc)
     
-    memory_state = memory_agent.get_memory_state()
-    print(f"✅ 构建了 {len(memory_state.events)} 个记忆事件")
-    print(f"✅ 生成了 {len(memory_state.abstracts)} 个记忆摘要\n")
+    memory_state = memory_agent.load()
+    print(f"✅ 构建了 {len(memory_state.abstracts)} 个记忆摘要\n")
     
     return True
 

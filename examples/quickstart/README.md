@@ -80,7 +80,8 @@ memory_agent = MemoryAgent(generator=generator, ...)
 memory_agent.memorize("你的文本内容")
 
 # 4. 获取记忆状态
-memory_state = memory_agent.get_memory_state()
+memory_state = memory_agent.load()
+print(f"构建了 {len(memory_state.abstracts)} 个记忆摘要")
 ```
 
 ### ResearchAgent（研究代理）
@@ -95,10 +96,12 @@ retriever = DenseRetriever(config=..., memory_store=..., page_store=...)
 research_agent = ResearchAgent(generator=generator, retriever=retriever)
 
 # 3. 进行研究
-result = research_agent.research(question="你的问题", top_k=5)
+result = research_agent.research(question="你的问题")
 
-# 4. 获取答案
-print(result.final_answer)
+# 4. 获取研究摘要
+research_summary = result.integrated_memory
+print(f"研究摘要: {research_summary}")
+print(f"迭代次数: {len(result.raw_memory.get('iterations', []))}")
 ```
 
 ## 🔧 配置选项

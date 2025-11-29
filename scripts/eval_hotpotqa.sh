@@ -7,7 +7,7 @@ set -e
 DATA_PATH="data/hotpotqa.json"
 GENERATOR="openai"
 MODEL="gpt-4"
-RETRIEVER="dense"
+RETRIEVER="index", "bm25", "dense"
 EMBEDDING_MODEL="BAAI/bge-base-en-v1.5"
 MAX_SAMPLES=""
 OUTPUT_DIR="outputs/hotpotqa"

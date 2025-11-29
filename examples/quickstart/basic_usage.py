@@ -22,6 +22,10 @@ from gam import (
     OpenAIGeneratorConfig,
     InMemoryMemoryStore,
     InMemoryPageStore,
+    IndexRetriever,
+    IndexRetrieverConfig,
+    BM25Retriever,
+    BM25RetrieverConfig,
     DenseRetriever,
     DenseRetrieverConfig,
 )
@@ -97,37 +101,87 @@ def research_example(memory_store, page_store):
     )
     generator = OpenAIGenerator(gen_config)
     
-    # 2. 创建检索器
-    retriever_config = DenseRetrieverConfig(
-        model_path="BAAI/bge-m3",
-        top_k=5
-    )
-    retriever = DenseRetriever(
-        config=retriever_config,
-        memory_store=memory_store,
-        page_store=page_store
-    )
+    # 2. 创建多个检索器
+    retrievers = {}
+    index_dir = './tmp'
+    
+    # 索引检索器
+    try:
+        page_index_dir = os.path.join(index_dir, "page_index")
+        if os.path.exists(page_index_dir):
+            import shutil
+            shutil.rmtree(page_index_dir)
+        
+        index_config = IndexRetrieverConfig(
+            index_dir=page_index_dir
+        )
+        index_retriever = IndexRetriever(index_config.__dict__)
+        index_retriever.build(page_store)
+        retrievers["page_index"] = index_retriever
+        print("✅ 索引检索器创建成功")
+    except Exception as e:
+        print(f"[WARN] 索引检索器创建失败: {e}")
+    
+    # BM25 检索器
+    try:
+        bm25_index_dir = os.path.join(index_dir, "bm25_index")
+        if os.path.exists(bm25_index_dir):
+            import shutil
+            shutil.rmtree(bm25_index_dir)
+        
+        bm25_config = BM25RetrieverConfig(
+            index_dir=bm25_index_dir,
+            threads=1
+        )
+        bm25_retriever = BM25Retriever(bm25_config.__dict__)
+        bm25_retriever.build(page_store)
+        retrievers["keyword"] = bm25_retriever
+        print("✅ BM25 检索器创建成功")
+    except Exception as e:
+        print(f"[WARN] BM25 检索器创建失败: {e}")
+    
+    # Dense 检索器
+    try:
+        dense_index_dir = os.path.join(index_dir, "dense_index")
+        if os.path.exists(dense_index_dir):
+            import shutil
+            shutil.rmtree(dense_index_dir)
+        
+        dense_config = DenseRetrieverConfig(
+            index_dir=dense_index_dir,
+            model_path="BAAI/bge-m3"
+        )
+        dense_retriever = DenseRetriever(dense_config.__dict__)
+        dense_retriever.build(page_store)
+        retrievers["vector"] = dense_retriever
+        print("✅ Dense 检索器创建成功")
+    except Exception as e:
+        print(f"[WARN] Dense 检索器创建失败: {e}")
     
     # 3. 创建 ResearchAgent
-    research_agent = ResearchAgent(
-        generator=generator,
-        retriever=retriever
-    )
+    research_agent_kwargs = {
+        "page_store": page_store,
+        "memory_store": memory_store,
+        "retrievers": retrievers,
+        "generator": generator,
+        "max_iters": 5
+    }
+    research_agent = ResearchAgent(**research_agent_kwargs)
     
     # 4. 进行研究
     question = "机器学习和深度学习有什么关键区别？"
-    print(f"研究问题: {question}\n")
+    print(f"\n研究问题: {question}\n")
     
-    result = research_agent.research(question=question, top_k=3)
+    research_result = research_agent.research(question=question)
+    research_summary = research_result.integrated_memory
     
     # 5. 显示结果
     print(f"✅ 研究完成:")
-    print(f"  - 迭代次数: {len(result.iterations)}")
-    print(f"  - 是否足够: {result.enough}")
-    print(f"\n最终答案:")
-    print(f"  {result.final_answer}")
+    print(f"  - 迭代次数: {len(research_result.raw_memory.get('iterations', []))}")
+    print(f"\n研究摘要:")
+    print(f"  {research_summary}")
     
-    return result
+    return research_result
 
 
 def main():
