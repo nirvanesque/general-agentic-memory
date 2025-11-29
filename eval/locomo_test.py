@@ -10,22 +10,21 @@ import sys
 import os
 import re
 import json
+import math
 from typing import Any, Dict, List, Optional, Tuple
+from collections import defaultdict, Counter
 from tqdm import tqdm
 
-# 添加项目根目录到 Python 路径
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, project_root)
 
 from gam import (
     MemoryAgent,
     ResearchAgent,
-    VLLMGenerator,
     InMemoryMemoryStore,
     InMemoryPageStore,
     IndexRetriever,
     BM25Retriever,
     DenseRetriever,
+    VLLMGenerator,
     VLLMGeneratorConfig,
     OpenAIGenerator,
     OpenAIGeneratorConfig,
@@ -160,6 +159,88 @@ def answer_with_summary(category: Optional[int], summary: str, question: str, ge
         prompt = make_summary_prompt(summary, question)
     raw = generator.generate_single(prompt=prompt)
     return raw.get("text", "").strip()
+
+# ========== 指标计算：借鉴自 eval_metric_locomo.py ==========
+
+def normalize_text(s: str) -> str:
+    if s is None:
+        return ""
+    s = str(s)
+    s = s.lower().strip()
+    s = re.sub(r"[^\w\s]", " ", s)   # remove punctuation
+    s = re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"(^|\s)(a|an|the)(\s|$)", " ", s)  # drop english articles
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+def tokens(s: str):
+    s = normalize_text(s)
+    return s.split() if s else []
+
+def f1_score(pred: str, gold: str) -> float:
+    gtoks = tokens(gold)
+    ptoks = tokens(pred)
+    if not gtoks and not ptoks:
+        return 1.0
+    if not gtoks or not ptoks:
+        return 0.0
+    gcount = Counter(gtoks)
+    pcount = Counter(ptoks)
+    overlap = sum(min(pcount[t], gcount[t]) for t in pcount)
+    if overlap == 0:
+        return 0.0
+    precision = overlap / len(ptoks)
+    recall = overlap / len(gtoks)
+    if precision + recall == 0:
+        return 0.0
+    return 2 * precision * recall / (precision + recall)
+
+def bleu1_score(pred: str, gold: str) -> float:
+    gtoks = tokens(gold)
+    ptoks = tokens(pred)
+    if len(ptoks) == 0:
+        return 0.0
+    gcount = Counter(gtoks)
+    pcount = Counter(ptoks)
+    clipped = sum(min(pcount[t], gcount[t]) for t in pcount)
+    precision = clipped / len(ptoks) if ptoks else 0.0
+    if ptoks and gtoks:
+        bp = 1.0 if len(ptoks) >= len(gtoks) else math.exp(1 - len(gtoks)/len(ptoks))
+    else:
+        bp = 0.0
+    return bp * precision
+
+def compute_metrics_by_category(items, pred_key: str = "summary_answer", pred_field: str = "answer"):
+    agg = defaultdict(list)
+    rows = []
+    for idx, ex in enumerate(items, 1):
+        cat = ex.get("category", "NA")
+        gold = ex.get("gold_answer", "")
+        pred = ""
+        val = ex.get(pred_key, "")
+        if isinstance(val, dict):
+            pred = val.get(pred_field, "")
+        else:
+            pred = val
+        f1 = f1_score(pred, gold)
+        b1 = bleu1_score(pred, gold)
+        agg[cat].append((f1, b1))
+        rows.append({
+            "q_idx": idx,
+            "category": cat,
+            "gold_answer": str(gold),
+            "prediction": str(pred),
+            "F1": f1,
+            "BLEU1": b1
+        })
+    summary = []
+    for cat in sorted(agg.keys(), key=lambda x: str(x)):
+        scores = agg[cat]
+        if scores:
+            f1_avg = sum(s[0] for s in scores)/len(scores)
+            b1_avg = sum(s[1] for s in scores)/len(scores)
+            summary.append({"category": cat, "count": len(scores), "F1_avg": f1_avg, "BLEU1_avg": b1_avg})
+    return summary, rows
 
 # ========== 核心处理逻辑 ==========
 
@@ -399,7 +480,7 @@ def process_sample(
                 
                 # 基于研究结果生成答案（根据category选择不同prompt）
                 print(f"[问题 {i}] 生成答案...")
-                summary_answer = answer_with_summary(cat, research_summary, q, research_generator)
+                summary_answer = answer_with_summary(cat, research_summary, q, working_generator)
                 
                 print(f"[问题 {i}] 预测答案: {summary_answer}")
                 
@@ -426,7 +507,7 @@ def process_sample(
                 }
                 return qa_result
         
-        # 串行处理所有问题
+        # 处理所有问题
         qa_items_with_index = [(i, qi) for i, qi in enumerate(qas, 1)]
         
         print(f"开始串行处理 {len(qa_items_with_index)} 个问题...")
@@ -505,17 +586,17 @@ def main():
     
     # Memory Generator 配置
     parser.add_argument("--memory-api-key", type=str, default="empty", help="Memory 模型 API Key")
-    parser.add_argument("--memory-base-url", type=str, default="http://localhost:8000/v1", help="Memory 模型 Base URL")
+    parser.add_argument("--memory-base-url", type=str, default="https://api.openai.com/v1", help="Memory 模型 Base URL")
     parser.add_argument("--memory-model", type=str, default="gpt-4o-mini", help="Memory 模型名称")
     
     # Research Generator 配置
     parser.add_argument("--research-api-key", type=str, default="empty", help="Research 模型 API Key")
-    parser.add_argument("--research-base-url", type=str, default="http://localhost:8000/v1", help="Research 模型 Base URL")
+    parser.add_argument("--research-base-url", type=str, default="https://api.openai.com/v1", help="Research 模型 Base URL")
     parser.add_argument("--research-model", type=str, default="gpt-4o-mini", help="Research 模型名称")
     
     # Working Generator 配置
     parser.add_argument("--working-api-key", type=str, default="empty", help="Working 模型 API Key")
-    parser.add_argument("--working-base-url", type=str, default="http://localhost:8000/v1", help="Working 模型 Base URL")
+    parser.add_argument("--working-base-url", type=str, default="https://api.openai.com/v1", help="Working 模型 Base URL")
     parser.add_argument("--working-model", type=str, default="gpt-4o-mini", help="Working 模型名称")
     
     args = parser.parse_args()
@@ -593,6 +674,51 @@ def main():
         with open(summary_file, 'w', encoding='utf-8') as f:
             json.dump(all_results, f, ensure_ascii=False, indent=2)
         print(f"\n[OK] 批量结果汇总已保存: {summary_file}")
+        
+        # 计算指标
+        print(f"\n{'='*60}")
+        print("开始计算指标...")
+        print(f"{'='*60}")
+        
+        # 计算 summary_answer 的指标
+        pred_key = "summary_answer"
+        pred_field = "answer"
+        
+        print(f"\n# LoCoMo Metrics for pred_key='{pred_key}', pred_field='{pred_field}'")
+        summary, details = compute_metrics_by_category(all_results, pred_key=pred_key, pred_field=pred_field)
+        
+        # 打印统计信息
+        print(f"\n按类别统计:")
+        for r in summary:
+            print(f"Category {r['category']}: n={r['count']}, F1_avg={r['F1_avg']:.4f}, BLEU1_avg={r['BLEU1_avg']:.4f}")
+        
+        # 计算整体平均指标
+        all_f1_scores = [row["F1"] for row in details]
+        all_bleu1_scores = [row["BLEU1"] for row in details]
+        overall_f1_avg = sum(all_f1_scores) / len(all_f1_scores) if all_f1_scores else 0.0
+        overall_bleu1_avg = sum(all_bleu1_scores) / len(all_bleu1_scores) if all_bleu1_scores else 0.0
+        
+        print(f"\n整体统计:")
+        print(f"总问题数: {len(all_results)}")
+        print(f"整体平均 F1: {overall_f1_avg:.4f}")
+        print(f"整体平均 BLEU1: {overall_bleu1_avg:.4f}")
+        
+        # 保存统计信息到 JSON 文件（类似 hotpotqa_test.py）
+        statistics = {
+            "total_samples": args.end_idx - args.start_idx,
+            "total_questions": len(all_results),
+            "overall_f1_avg": overall_f1_avg,
+            "overall_bleu1_avg": overall_bleu1_avg,
+            "by_category": summary,
+            "details": details,
+            "start_idx": args.start_idx,
+            "end_idx": args.end_idx - 1
+        }
+        
+        stats_file = os.path.join(args.outdir, f"batch_statistics_{args.start_idx}_{args.end_idx-1}.json")
+        with open(stats_file, 'w', encoding='utf-8') as f:
+            json.dump(statistics, f, ensure_ascii=False, indent=2)
+        print(f"\n指标结果已保存到: {stats_file}")
     
     print(f"\n{'='*60}")
     print("[OK] 批量测试完成！")

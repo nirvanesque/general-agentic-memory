@@ -23,9 +23,6 @@ import random
 from typing import Any, Counter, Dict, List, Optional, Tuple
 from tqdm import tqdm
 
-# 添加项目根目录到 Python 路径
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, project_root)
 
 from gam import (
     MemoryAgent,
@@ -43,44 +40,6 @@ from gam import (
     BM25RetrieverConfig,
     DenseRetrieverConfig,
 )
-
-# ========== NLTK 资源检查 ==========
-# 检查并下载所需的 NLTK 资源（只执行一次）
-_nltk_initialized = False
-_nltk_lock = None
-
-def _ensure_nltk_resources():
-    """确保 NLTK 资源已下载（线程安全）"""
-    global _nltk_initialized, _nltk_lock
-    
-    if _nltk_initialized:
-        return
-    
-    try:
-        import threading
-        if _nltk_lock is None:
-            _nltk_lock = threading.Lock()
-        
-        with _nltk_lock:
-            if _nltk_initialized:
-                return
-            
-            try:
-                import nltk
-                # 检查 punkt_tab 资源是否存在
-                try:
-                    nltk.data.find('tokenizers/punkt_tab')
-                except LookupError:
-                    print("正在下载 NLTK punkt_tab 资源（首次运行需要下载）...")
-                    nltk.download('punkt_tab', quiet=True)
-                    print("NLTK punkt_tab 资源下载完成")
-                
-                _nltk_initialized = True
-            except ImportError:
-                # NLTK 未安装，将在函数中回退到简单分词
-                pass
-    except Exception as e:
-        print(f"Warning: NLTK 资源检查失败: {e}")
 
 # ========== 数据加载 ==========
 
@@ -293,70 +252,6 @@ def make_prompt(summary: str, question: str) -> str:
     return prompt
 
 # ========== 答案提取和评估 ==========
-
-
-def _calculate_bleu1(pred_answer: str, gold_answers: List[str]) -> float:
-    """
-    计算预测答案与标准答案之间的 BLEU-1 分数
-    
-    使用 nltk.translate.bleu_score 计算 BLEU-1 分数
-    
-    Args:
-        pred_answer: 预测答案
-        gold_answers: 标准答案列表（可能有多个正确答案）
-    
-    Returns:
-        BLEU-1 分数（0.0 - 1.0），如果预测答案为空则返回 0.0
-    """
-    if not pred_answer:
-        return 0.0
-    
-    # 确保 NLTK 资源已下载
-    _ensure_nltk_resources()
-    
-    try:
-        from nltk.translate.bleu_score import sentence_bleu
-        from nltk.tokenize import word_tokenize
-    except ImportError:
-        print("Warning: nltk not available, falling back to simple tokenization")
-        # 简单的回退方案：使用空格分词
-        def word_tokenize(text):
-            return text.lower().split()
-    
-    # 将预测答案分词
-    pred_tokens = word_tokenize(pred_answer.lower())
-    
-    if not pred_tokens:
-        return 0.0
-    
-    # 计算与每个标准答案的 BLEU-1，取最大值
-    max_bleu1 = 0.0
-    
-    for gold_answer in gold_answers:
-        if not gold_answer:
-            continue
-        
-        # 将标准答案分词
-        gold_tokens = word_tokenize(gold_answer.lower())
-        
-        if not gold_tokens:
-            continue
-        
-        # 计算 BLEU-1 分数（只使用 1-gram 权重）
-        try:
-            # 使用 BLEU-1（只考虑 1-gram 精确匹配）
-            bleu1 = sentence_bleu(
-                [gold_tokens],  # 参考答案（列表形式）
-                pred_tokens,    # 预测答案
-                weights=(1.0, 0.0, 0.0, 0.0)  # 只使用 1-gram
-            )
-            max_bleu1 = max(max_bleu1, bleu1)
-        except Exception as e:
-            print(f"Warning: Error calculating BLEU-1: {e}")
-            continue
-    
-    return max_bleu1
-
 def normalize_answer(s):
     def remove_articles(text):
         return re.sub(r"\b(a|an|the)\b", " ", text)
@@ -399,6 +294,15 @@ def process_sample(
     sample: Dict[str, Any], 
     sample_index: int, 
     outdir: str,
+    memory_api_key: str,
+    memory_base_url: str,
+    memory_model: str,
+    research_api_key: str,
+    research_base_url: str,
+    research_model: str,
+    working_api_key: str,
+    working_base_url: str,
+    working_model: str,
     max_tokens: int = 2000,
     embedding_model_path: Optional[str] = None
 ):
@@ -432,46 +336,18 @@ def process_sample(
         memory_store = InMemoryMemoryStore(dir_path=sample_results_dir)
         page_store = InMemoryPageStore(dir_path=sample_results_dir)
         
-        # 3. 创建 Generator
-        print(f"\n步骤 1: 创建 Generator")
-        # memory_generator_config = VLLMGeneratorConfig(
-        #     model_name="qwen2.5-14b-instruct",
-        #     api_key="empty",
-        #     base_url="http://localhost:8000/v1",
-        #     temperature=0.3,
-        #     max_tokens=256
-        # )
-        # memory_generator = VLLMGenerator(memory_generator_config.__dict__)
-
-        # generator_config = VLLMGeneratorConfig(
-        #     model_name="qwen2.5-14b-instruct",
-        #     api_key="empty",
-        #     base_url="http://localhost:8000/v1",
-        #     temperature=0.3,
-        #     max_tokens=2048
-        # )
-        # generator = VLLMGenerator(generator_config.__dict__)
-
+        # 3. 创建 Memory Generator
+        print(f"\n步骤 1: 创建 Memory Generator")
         memory_generator_config = OpenAIGeneratorConfig(
-            model_name="gpt-4o-mini",
-            api_key="sk-UdTVN7RUnJY0jMVM2aUMhSJKGu6nmwYDprWkEltPuDbxMuCR",
-            base_url="https://api2.aigcbest.top/v1",
+            model_name=memory_model,
+            api_key=memory_api_key,
+            base_url=memory_base_url,
             temperature=0.3,
             max_tokens=256
         )
-        memory_generator = OpenAIGenerator(memory_generator_config.__dict__)     
-
-
-        generator_config = OpenAIGeneratorConfig(
-            model_name="gpt-4o-mini",
-            api_key="sk-UdTVN7RUnJY0jMVM2aUMhSJKGu6nmwYDprWkEltPuDbxMuCR",
-            base_url="https://api2.aigcbest.top/v1",
-            temperature=0.3,
-            max_tokens=2048
-        )
-        generator = OpenAIGenerator(generator_config.__dict__)    
-
-        print(f"[OK] Generator 创建完成")
+        memory_generator = OpenAIGenerator(memory_generator_config.__dict__)
+        
+        print(f"[OK] Memory Generator 创建完成")
         
  
 
@@ -557,8 +433,15 @@ def process_sample(
             
             dense_config = DenseRetrieverConfig(
                 index_dir=dense_index_dir,
-                api_url="http://localhost:8001"  # API 模式：所有进程共享一个模型服务
+                model_name="BAAI/bge-m3"
             )
+
+            # dense_config = DenseRetrieverConfig(
+            #     index_dir=dense_index_dir,
+            #     api_url="http://localhost:8001" 
+            # )
+
+            
             dense_retriever = DenseRetriever(dense_config.__dict__)
             dense_retriever.build(page_store)
             retrievers["vector"] = dense_retriever
@@ -568,19 +451,41 @@ def process_sample(
         
         print(f"[INFO] 成功创建 {len(retrievers)} 个检索器")
         
-        # 6. 创建 ResearchAgent
-        print(f"\n步骤 4: 创建 ResearchAgent")
+        # 6. 创建 Research Generator 和 Working Generator
+        print(f"\n步骤 4: 创建 Research Generator 和 Working Generator")
+        research_generator_config = OpenAIGeneratorConfig(
+            model_name=research_model,
+            api_key=research_api_key,
+            base_url=research_base_url,
+            temperature=0.3,
+            max_tokens=2048
+        )
+        research_generator = OpenAIGenerator(research_generator_config.__dict__)
+        
+        working_generator_config = OpenAIGeneratorConfig(
+            model_name=working_model,
+            api_key=working_api_key,
+            base_url=working_base_url,
+            temperature=0.3,
+            max_tokens=256
+        )
+        working_generator = OpenAIGenerator(working_generator_config.__dict__)
+        
+        print(f"[OK] Research Generator 和 Working Generator 创建完成")
+        
+        # 7. 创建 ResearchAgent
+        print(f"\n步骤 5: 创建 ResearchAgent")
         research_agent = ResearchAgent(
             page_store=page_store,
             memory_store=memory_store,
             retrievers=retrievers,
-            generator=generator,
+            generator=research_generator,
             max_iters=3
         )
         print(f"[OK] ResearchAgent 创建完成")
         
-        # 7. 进行问答
-        print(f"\n步骤 5: 进行问答")
+        # 8. 进行问答
+        print(f"\n步骤 6: 进行问答")
         
         # 提取问题信息
         question = sample.get("question", "")
@@ -629,7 +534,7 @@ def process_sample(
             # 使用统一的 prompt 格式生成答案
             print("生成答案...")
             prompt = make_prompt(research_summary, question)
-            response = generator.generate_single(prompt=prompt)
+            response = working_generator.generate_single(prompt=prompt)
             answer_text = response.get("text", "").strip()
             
             print(f"模型响应: {answer_text[:200]}...")
@@ -639,18 +544,13 @@ def process_sample(
             pred_answer = answer_text
             result["response"] = answer_text
             result["pred"] = pred_answer
-            
-            # 计算 BLEU-1 分数
-            bleu1_score = _calculate_bleu1(pred_answer, gold_answers) if pred_answer else 0.0
-            result["bleu1"] = bleu1_score
-            
+                        
             # 计算 F1 分数
             f1_score = _calculate_f1(pred_answer, gold_answers) if pred_answer else 0.0
             result["f1"] = f1_score
             
             print(f"预测答案: {pred_answer}")
             print(f"标准答案: {gold_answers}")
-            print(f"BLEU-1 分数: {bleu1_score:.4f}")
             print(f"F1 分数: {f1_score:.4f}")
             
         except Exception as e:
@@ -675,7 +575,6 @@ def process_sample(
             print(f"记忆摘要数: {len(final_state.abstracts)}")
         print(f"预测答案: {result.get('pred', 'N/A')}")
         print(f"标准答案: {gold_answers}")
-        print(f"BLEU-1 分数: {result.get('bleu1', 0.0):.4f}")
         print(f"F1 分数: {result.get('f1', 0.0):.4f}")
         print(f"结果保存到: {sample_results_dir}")
         
@@ -698,18 +597,34 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description="GAM 框架 + NarrativeQA 数据集测试")
-    parser.add_argument("--data-dir", type=str, default="/share/project/bingyu/datasets/narrativeqa/data", 
+    parser.add_argument("--data-dir", type=str, default="/path/to/narrativeqa/data", 
                         help="NarrativeQA 数据集目录路径")
     parser.add_argument("--split", type=str, default="test", choices=["train", "validation", "test"],
                         help="数据集分割（train/validation/test）")
-    parser.add_argument("--outdir", type=str, default="/share/project/bingyu/code/general-agentic-memory/results_all/qwen14b_results/narrativeqa",
+    parser.add_argument("--outdir", type=str, default="./results/narrativeqa",
                         help="输出目录")
     parser.add_argument("--start-idx", type=int, default=0, help="开始样本索引")
     parser.add_argument("--end-idx", type=int, default=None, help="结束样本索引（不包含），None表示处理所有样本")
     parser.add_argument("--max-tokens", type=int, default=2048, help="每个上下文块的最大 token 数量")
-    parser.add_argument("--embedding-model-path", type=str, default="/share/project/bingyu/models/Qwen2.5-14B-Instruct", 
+    parser.add_argument("--embedding-model-path", type=str, default=None, 
                         help="Embedding 模型路径，用于精确 token 计算（可选）")
     parser.add_argument("--seed", type=int, default=None, help="随机种子，用于打乱数据集（可选）")
+    
+    # Memory Generator 配置
+    parser.add_argument("--memory-api-key", type=str, default="empty", help="Memory 模型 API Key")
+    parser.add_argument("--memory-base-url", type=str, default="https://api.openai.com/v1", help="Memory 模型 Base URL")
+    parser.add_argument("--memory-model", type=str, default="gpt-4o-mini", help="Memory 模型名称")
+    
+    # Research Generator 配置
+    parser.add_argument("--research-api-key", type=str, default="empty", help="Research 模型 API Key")
+    parser.add_argument("--research-base-url", type=str, default="https://api.openai.com/v1", help="Research 模型 Base URL")
+    parser.add_argument("--research-model", type=str, default="gpt-4o-mini", help="Research 模型名称")
+    
+    # Working Generator 配置
+    parser.add_argument("--working-api-key", type=str, default="empty", help="Working 模型 API Key")
+    parser.add_argument("--working-base-url", type=str, default="https://api.openai.com/v1", help="Working 模型 Base URL")
+    parser.add_argument("--working-model", type=str, default="gpt-4o-mini", help="Working 模型名称")
+    
     args = parser.parse_args()
     
     print("=" * 60)
@@ -753,8 +668,13 @@ def main():
         print(f"错误: 开始索引 {args.start_idx} 必须小于结束索引 {args.end_idx}")
         return
     
-    # 定义 worker 函数用于并行处理
-    def _worker(sample_idx):
+    # 串行批量处理样本
+    sample_indices = list(range(args.start_idx, args.end_idx))
+    
+    print(f"开始串行处理样本...")
+    
+    all_results = []
+    for sample_idx in tqdm(sample_indices, desc="处理样本"):
         sample = all_samples[sample_idx]
         print(f"\n{'='*80}")
         print(f"开始处理样本 {sample_idx}/{len(all_samples)-1} (范围: {args.start_idx}-{args.end_idx-1})")
@@ -765,37 +685,33 @@ def main():
                 sample, 
                 sample_idx, 
                 args.outdir,
+                args.memory_api_key,
+                args.memory_base_url,
+                args.memory_model,
+                args.research_api_key,
+                args.research_base_url,
+                args.research_model,
+                args.working_api_key,
+                args.working_base_url,
+                args.working_model,
                 max_tokens=args.max_tokens,
                 embedding_model_path=args.embedding_model_path
             )
             print(f"[OK] 样本 {sample_idx} 处理完成")
-            return result
+            all_results.append(result)
         except Exception as e:
             print(f"[ERROR] 样本 {sample_idx} 处理失败: {e}")
             import traceback
             traceback.print_exc()
-            return {
+            all_results.append({
                 "sample_id": sample.get("_id", f"sample-{sample_idx}"),
                 "error": str(e)
-            }
-    
-    # 串行批量处理样本
-    sample_indices = list(range(args.start_idx, args.end_idx))
-    
-    print(f"开始串行处理样本...")
-    
-    all_results = []
-    for sample_idx in tqdm(sample_indices, desc="处理样本"):
-        result = _worker(sample_idx)
-        all_results.append(result)
+            })
     
     # 统计结果
-    bleu1_scores = []
     f1_scores = []
     
     for result in all_results:
-        if "bleu1" in result:
-            bleu1_scores.append(result["bleu1"])
         if "f1" in result:
             f1_scores.append(result["f1"])
     
@@ -806,12 +722,11 @@ def main():
             json.dump(all_results, f, ensure_ascii=False, indent=2)
         print(f"\n[OK] 批量结果汇总已保存: {summary_file}")
         
-        # 计算平均 BLEU-1 和 F1 分数
-        if len(bleu1_scores) > 0 or len(f1_scores) > 0:
-            avg_bleu1 = sum(bleu1_scores) / len(bleu1_scores) if bleu1_scores else 0.0
+        # 计算平均 F1 分数
+        if len(f1_scores) > 0:
             avg_f1 = sum(f1_scores) / len(f1_scores) if f1_scores else 0.0
             total_samples = args.end_idx - args.start_idx
-            success_count = len(bleu1_scores) if bleu1_scores else len(f1_scores)
+            success_count = len(f1_scores) if f1_scores else len(f1_scores)
             
             # 构建统计信息
             statistics = {
@@ -819,9 +734,7 @@ def main():
                 "success_count": success_count,
                 "failed_count": total_samples - success_count,
                 "success_rate": success_count / total_samples if total_samples > 0 else 0.0,
-                "avg_bleu1": avg_bleu1,
                 "avg_f1": avg_f1,
-                "bleu1_scores": bleu1_scores,
                 "f1_scores": f1_scores,
                 "start_idx": args.start_idx,
                 "end_idx": args.end_idx - 1
@@ -841,7 +754,6 @@ def main():
             print(f"成功回答问题数: {success_count}")
             print(f"失败问题数: {total_samples - success_count}")
             print(f"成功率: {statistics['success_rate']:.2%}")
-            print(f"平均 BLEU-1 分数: {avg_bleu1:.4f}")
             print(f"平均 F1 分数: {avg_f1:.4f}")
             print(f"{'='*60}")
 

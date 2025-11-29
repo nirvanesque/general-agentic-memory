@@ -17,6 +17,15 @@ python3 eval/narrativeqa_test.py \
     --start-idx 0 \
     --end-idx 300 \
     --max-tokens 2048 \
-    --seed 42
-    # --embedding-model-path /path/to/embedding/model \
+    --seed 42 \
+    --memory-api-key "your-openai-api-key" \
+    --memory-base-url "https://api.openai.com/v1" \
+    --memory-model "gpt-4o-mini" \
+    --research-api-key "your-openai-api-key" \
+    --research-base-url "https://api.openai.com/v1" \
+    --research-model "gpt-4o-mini" \
+    --working-api-key "your-openai-api-key" \
+    --working-base-url "https://api.openai.com/v1" \
+    --working-model "gpt-4o-mini"  \
+    --embedding-model-path /path/to/embedding/model
 

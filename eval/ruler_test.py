@@ -27,9 +27,6 @@ from collections import Counter
 import string
 import glob
 
-# 添加项目根目录到 Python 路径
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, project_root)
 
 from gam import (
     MemoryAgent,
@@ -105,7 +102,7 @@ def get_dataset_system_prompt(dataset_name: str) -> str:
             return prompt
     
     # 默认 system_prompt
-    return "You are processing a long document. Focus on extracting and summarizing key information that may be relevant for answering questions. Preserve important facts, entities, and relationships."
+    return ""
 
 # ========== 数据加载 ==========
 
@@ -389,7 +386,16 @@ def process_sample(
     sample: Dict[str, Any], 
     sample_index: int, 
     outdir: str,
-    max_tokens: int = 2000,
+    memory_api_key: str,
+    memory_base_url: str,
+    memory_model: str,
+    research_api_key: str,
+    research_base_url: str,
+    research_model: str,
+    working_api_key: str,
+    working_base_url: str,
+    working_model: str,
+    max_tokens: int = 2048,
     embedding_model_path: Optional[str] = None
 ):
     """
@@ -423,45 +429,18 @@ def process_sample(
         memory_store = InMemoryMemoryStore(dir_path=sample_results_dir)
         page_store = InMemoryPageStore(dir_path=sample_results_dir)
         
-        # 3. 创建 Generator
-        print(f"\n步骤 1: 创建 Generator")
-
-        memory_generator_config = VLLMGeneratorConfig(
-            model_name="qwen2.5-14b-instruct",
-            api_key="empty",
-            base_url="http://localhost:8000/v1",
+        # 3. 创建 Memory Generator
+        print(f"\n步骤 1: 创建 Memory Generator")
+        memory_generator_config = OpenAIGeneratorConfig(
+            model_name=memory_model,
+            api_key=memory_api_key,
+            base_url=memory_base_url,
             temperature=0.3,
             max_tokens=256
         )
-        memory_generator = VLLMGenerator(memory_generator_config.__dict__)
-
-        research_generator_config = VLLMGeneratorConfig(
-            model_name="qwen2.5-14b-instruct",
-            api_key="empty",
-            base_url="http://localhost:8000/v1",
-            temperature=0.3,
-            max_tokens=2048
-        )
-        research_generator = VLLMGenerator(research_generator_config.__dict__)
-
-        # memory_generator_config = OpenAIGeneratorConfig(
-        #     model_name="gpt-4o-mini",
-        #     api_key="sk-OYH0e2T0poZhE09ntQQwvQHu6jxLCQMTNVat6Zgvg80bFNZ0",
-        #     base_url="https://api.key77qiqi.com/v1",
-        #     temperature=0.3,
-        #     max_tokens=256
-        # )
-        # memory_generator = OpenAIGenerator(memory_generator_config.__dict__)     
-
-        # research_generator_config = OpenAIGeneratorConfig(
-        #     model_name="gpt-4o-mini",
-        #     api_key="sk-OYH0e2T0poZhE09ntQQwvQHu6jxLCQMTNVat6Zgvg80bFNZ0",
-        #     base_url="https://api.key77qiqi.com/v1",
-        #     temperature=0.3,
-        #     max_tokens=1024
-        # )
-        # research_generator = OpenAIGenerator(research_generator_config.__dict__)        
-        print(f"[OK] Generator 创建完成")
+        memory_generator = OpenAIGenerator(memory_generator_config.__dict__)
+        
+        print(f"[OK] Memory Generator 创建完成")
         
         # 4. 获取数据集对应的 system_prompt
         memory_system_prompt = get_dataset_system_prompt(dataset_name)
@@ -549,8 +528,14 @@ def process_sample(
             
             dense_config = DenseRetrieverConfig(
                 index_dir=dense_index_dir,
-                api_url="http://localhost:8001"
+                model_name="BAAI/bge-m3"
             )
+
+            # dense_config = DenseRetrieverConfig(
+            #     index_dir=dense_index_dir,
+            #     api_url="http://localhost:8001"  # API 模式：所有进程共享一个模型服务
+            # )
+            
             dense_retriever = DenseRetriever(dense_config.__dict__)
             dense_retriever.build(page_store)
             retrievers["vector"] = dense_retriever
@@ -560,8 +545,30 @@ def process_sample(
         
         print(f"[INFO] 成功创建 {len(retrievers)} 个检索器")
         
-        # 7. 创建 ResearchAgent
-        print(f"\n步骤 4: 创建 ResearchAgent")
+        # 7. 创建 Research Generator 和 Working Generator
+        print(f"\n步骤 4: 创建 Research Generator 和 Working Generator")
+        research_generator_config = OpenAIGeneratorConfig(
+            model_name=research_model,
+            api_key=research_api_key,
+            base_url=research_base_url,
+            temperature=0.3,
+            max_tokens=2048
+        )
+        research_generator = OpenAIGenerator(research_generator_config.__dict__)
+        
+        working_generator_config = OpenAIGeneratorConfig(
+            model_name=working_model,
+            api_key=working_api_key,
+            base_url=working_base_url,
+            temperature=0.3,
+            max_tokens=256
+        )
+        working_generator = OpenAIGenerator(working_generator_config.__dict__)
+        
+        print(f"[OK] Research Generator 和 Working Generator 创建完成")
+        
+        # 8. 创建 ResearchAgent
+        print(f"\n步骤 5: 创建 ResearchAgent")
         
         # 根据数据集设置 system_prompts
         system_prompts = None
@@ -589,8 +596,8 @@ def process_sample(
         research_agent = ResearchAgent(**research_agent_kwargs)
         print(f"[OK] ResearchAgent 创建完成")
         
-        # 8. 进行问答
-        print(f"\n步骤 5: 进行问答")
+        # 9. 进行问答
+        print(f"\n步骤 6: 进行问答")
         
         # 只使用 question（不含 example）
         question = sample.get("question", "").strip()
@@ -644,7 +651,7 @@ def process_sample(
             # 使用 build_question_prompt 的结果（包含 example + question）生成答案
             print("生成答案...")
             prompt = f"""Read the text below and answer a question. Context: {research_summary}\n\n{question_prompt}\n\nAnswer:"""
-            response = memory_generator.generate_single(prompt=prompt)
+            response = working_generator.generate_single(prompt=prompt)
             answer_text = response.get("text", "").strip()
             
             print(f"模型响应: {answer_text[:200]}...")
@@ -710,10 +717,10 @@ def main():
     
     parser = argparse.ArgumentParser(description="GAM 框架 + RULER 数据集测试")
     parser.add_argument("--data", type=str, 
-                        default="/share/project/bingyu/datasets/ruler/128k/data_jsonl",
+                        default="/path/to/ruler/data",
                         help="RULER 数据集 JSONL 文件路径或目录路径")
     parser.add_argument("--outdir", type=str, 
-                        default="/share/project/bingyu/code/general-agentic-memory/cf/results/gam_ruler",
+                        default="./results/ruler",
                         help="输出目录")
     parser.add_argument("--start-idx", type=int, default=0, 
                         help="开始样本索引")
@@ -722,8 +729,24 @@ def main():
     parser.add_argument("--max-tokens", type=int, default=2048, 
                         help="每个上下文块的最大 token 数量")
     parser.add_argument("--embedding-model-path", type=str, 
-                        default="/share/project/bingyu/models/Qwen2.5-14B-Instruct", 
+                        default=None, 
                         help="Embedding 模型路径，用于精确 token 计算（可选）")
+    
+    # Memory Generator 配置
+    parser.add_argument("--memory-api-key", type=str, default="empty", help="Memory 模型 API Key")
+    parser.add_argument("--memory-base-url", type=str, default="https://api.openai.com/v1", help="Memory 模型 Base URL")
+    parser.add_argument("--memory-model", type=str, default="gpt-4o-mini", help="Memory 模型名称")
+    
+    # Research Generator 配置
+    parser.add_argument("--research-api-key", type=str, default="empty", help="Research 模型 API Key")
+    parser.add_argument("--research-base-url", type=str, default="https://api.openai.com/v1", help="Research 模型 Base URL")
+    parser.add_argument("--research-model", type=str, default="gpt-4o-mini", help="Research 模型名称")
+    
+    # Working Generator 配置
+    parser.add_argument("--working-api-key", type=str, default="empty", help="Working 模型 API Key")
+    parser.add_argument("--working-base-url", type=str, default="https://api.openai.com/v1", help="Working 模型 Base URL")
+    parser.add_argument("--working-model", type=str, default="gpt-4o-mini", help="Working 模型名称")
+    
     args = parser.parse_args()
     
     print("=" * 60)
@@ -779,38 +802,43 @@ def main():
         
         print(f"处理样本范围: {start_idx} 到 {end_idx-1} (共 {end_idx - start_idx} 个样本)")
         
-        # 定义 worker 函数
-        def _worker(sample_idx):
-            sample = all_samples[sample_idx]
-            try:
-                result = process_sample(
-                    sample,
-                    sample_idx,
-                    args.outdir,
-                    max_tokens=args.max_tokens,
-                    embedding_model_path=args.embedding_model_path
-                )
-                return result
-            except Exception as e:
-                print(f"[ERROR] 样本 {sample_idx} 处理失败: {e}")
-                import traceback
-                traceback.print_exc()
-                return {
-                    "_id": sample.get("_id", f"sample-{sample_idx}"),
-                    "index": sample_idx,
-                    "dataset": dataset_name,
-                    "error": str(e),
-                    "is_correct": False,
-                    "accuracy": 0.0
-                }
-        
         # 串行处理样本
         sample_indices = list(range(start_idx, end_idx))
         
         print(f"\n开始串行处理...")
         results = []
         for idx in tqdm(sample_indices, desc=f"处理 {dataset_name}"):
-            results.append(_worker(idx))
+            sample = all_samples[idx]
+            try:
+                result = process_sample(
+                    sample,
+                    idx,
+                    args.outdir,
+                    args.memory_api_key,
+                    args.memory_base_url,
+                    args.memory_model,
+                    args.research_api_key,
+                    args.research_base_url,
+                    args.research_model,
+                    args.working_api_key,
+                    args.working_base_url,
+                    args.working_model,
+                    max_tokens=args.max_tokens,
+                    embedding_model_path=args.embedding_model_path
+                )
+                results.append(result)
+            except Exception as e:
+                print(f"[ERROR] 样本 {idx} 处理失败: {e}")
+                import traceback
+                traceback.print_exc()
+                results.append({
+                    "_id": sample.get("_id", f"sample-{idx}"),
+                    "index": idx,
+                    "dataset": dataset_name,
+                    "error": str(e),
+                    "is_correct": False,
+                    "accuracy": 0.0
+                })
         
         all_results.extend(results)
         

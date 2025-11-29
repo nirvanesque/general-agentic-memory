@@ -19,9 +19,6 @@ import json
 from typing import Any, Counter, Dict, List, Optional, Tuple
 from tqdm import tqdm
 
-# 添加项目根目录到 Python 路径
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, project_root)
 
 from gam import (
     MemoryAgent,
@@ -266,6 +263,15 @@ def process_sample(
     sample: Dict[str, Any], 
     sample_index: int, 
     outdir: str,
+    memory_api_key: str,
+    memory_base_url: str,
+    memory_model: str,
+    research_api_key: str,
+    research_base_url: str,
+    research_model: str,
+    working_api_key: str,
+    working_base_url: str,
+    working_model: str,
     max_tokens: int = 2000,
     embedding_model_path: Optional[str] = None
 ):
@@ -299,26 +305,18 @@ def process_sample(
         memory_store = InMemoryMemoryStore(dir_path=sample_results_dir)
         page_store = InMemoryPageStore(dir_path=sample_results_dir)
         
-        # 3. 创建 Generator
-        print(f"\n步骤 1: 创建 Generator")
+        # 3. 创建 Memory Generator
+        print(f"\n步骤 1: 创建 Memory Generator")
         memory_generator_config = OpenAIGeneratorConfig(
-            model_name="gpt-4o-mini",
-            api_key="sk-UdTVN7RUnJY0jMVM2aUMhSJKGu6nmwYDprWkEltPuDbxMuCR",
-            base_url="https://api2.aigcbest.top/v1",
+            model_name=memory_model,
+            api_key=memory_api_key,
+            base_url=memory_base_url,
             temperature=0.3,
             max_tokens=256
         )
-        memory_generator = OpenAIGenerator(memory_generator_config.__dict__)     
-
-        generator_config = OpenAIGeneratorConfig(
-            model_name="gpt-4o-mini",
-            api_key="sk-UdTVN7RUnJY0jMVM2aUMhSJKGu6nmwYDprWkEltPuDbxMuCR",
-            base_url="https://api2.aigcbest.top/v1",
-            temperature=0.3,
-            max_tokens=2048
-        )
-        generator = OpenAIGenerator(generator_config.__dict__)    
-        print(f"[OK] Generator 创建完成")
+        memory_generator = OpenAIGenerator(memory_generator_config.__dict__)
+        
+        print(f"[OK] Memory Generator 创建完成")
         
         # 4. 使用 MemoryAgent 构建记忆（将每个 context chunk 作为一条消息）
         print(f"\n步骤 2: 使用 MemoryAgent 构建记忆")
@@ -327,10 +325,11 @@ def process_sample(
             page_store=page_store,
             generator=memory_generator,
         )
-        
-        for i, context_chunk in enumerate(context_chunks, 1):
-            print(f"  处理上下文块 {i}/{len(context_chunks)}...")
-            memory_update = memory_agent.memorize(context_chunk)
+
+        if not os.path.exists(os.path.join(sample_results_dir, 'memory_state.json')):
+            for i, context_chunk in enumerate(context_chunks, 1):
+                print(f"  处理上下文块 {i}/{len(context_chunks)}...")
+                memory_update = memory_agent.memorize(context_chunk) 
         
         # 查看构建的记忆
         final_state = memory_store.load()
@@ -401,8 +400,15 @@ def process_sample(
             
             dense_config = DenseRetrieverConfig(
                 index_dir=dense_index_dir,
-                api_url="http://localhost:8001"  # API 模式：所有进程共享一个模型服务
+                model_name="BAAI/bge-m3"
             )
+
+            # dense_config = DenseRetrieverConfig(
+            #     index_dir=dense_index_dir,
+            #     api_url="http://localhost:8001"  # API 模式：所有进程共享一个模型服务
+            # )
+
+            
             dense_retriever = DenseRetriever(dense_config.__dict__)
             dense_retriever.build(page_store)
             retrievers["vector"] = dense_retriever
@@ -412,19 +418,41 @@ def process_sample(
         
         print(f"[INFO] 成功创建 {len(retrievers)} 个检索器")
         
-        # 6. 创建 ResearchAgent
-        print(f"\n步骤 4: 创建 ResearchAgent")
+        # 6. 创建 Research Generator 和 Working Generator
+        print(f"\n步骤 4: 创建 Research Generator 和 Working Generator")
+        research_generator_config = OpenAIGeneratorConfig(
+            model_name=research_model,
+            api_key=research_api_key,
+            base_url=research_base_url,
+            temperature=0.3,
+            max_tokens=2048
+        )
+        research_generator = OpenAIGenerator(research_generator_config.__dict__)
+        
+        working_generator_config = OpenAIGeneratorConfig(
+            model_name=working_model,
+            api_key=working_api_key,
+            base_url=working_base_url,
+            temperature=0.3,
+            max_tokens=256
+        )
+        working_generator = OpenAIGenerator(working_generator_config.__dict__)
+        
+        print(f"[OK] Research Generator 和 Working Generator 创建完成")
+        
+        # 7. 创建 ResearchAgent
+        print(f"\n步骤 5: 创建 ResearchAgent")
         research_agent = ResearchAgent(
             page_store=page_store,
             memory_store=memory_store,
             retrievers=retrievers,
-            generator=generator,
+            generator=research_generator,
             max_iters=3
         )
         print(f"[OK] ResearchAgent 创建完成")
         
-        # 7. 进行问答
-        print(f"\n步骤 5: 进行问答")
+        # 8. 进行问答
+        print(f"\n步骤 6: 进行问答")
         
         # 提取问题信息
         question = sample.get("input", "")
@@ -472,7 +500,7 @@ def process_sample(
             # 使用统一的 prompt 格式生成答案
             print("生成答案...")
             prompt = make_prompt(research_summary, question)
-            response = generator.generate_single(prompt=prompt)
+            response = working_generator.generate_single(prompt=prompt)
             answer_text = response.get("text", "").strip()
             
             print(f"模型响应: {answer_text[:200]}...")
@@ -534,15 +562,31 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description="GAM 框架 + HotpotQA 数据集测试")
-    parser.add_argument("--data", type=str, default="/share/project/bingyu/datasets/long_hotpotqa/eval_50.json", 
+    parser.add_argument("--data", type=str, default="/path/to/hotpotqa/eval.json", 
                         help="HotpotQA 数据集路径")
-    parser.add_argument("--outdir", type=str, default="/share/project/bingyu/code/general-agentic-memory/results_all/qwen14b_results/hotpotqa",
+    parser.add_argument("--outdir", type=str, default="./results/hotpotqa",
                         help="输出目录")
     parser.add_argument("--start-idx", type=int, default=0, help="开始样本索引")
     parser.add_argument("--end-idx", type=int, default=None, help="结束样本索引（不包含），None表示处理所有样本")
     parser.add_argument("--max-tokens", type=int, default=2048, help="每个上下文块的最大 token 数量")
-    parser.add_argument("--embedding-model-path", type=str, default="/share/project/bingyu/models/Qwen2.5-14B-Instruct", 
+    parser.add_argument("--embedding-model-path", type=str, default=None, 
                         help="Embedding 模型路径，用于精确 token 计算（可选）")
+    
+    # Memory Generator 配置
+    parser.add_argument("--memory-api-key", type=str, default="empty", help="Memory 模型 API Key")
+    parser.add_argument("--memory-base-url", type=str, default="https://api.openai.com/v1", help="Memory 模型 Base URL")
+    parser.add_argument("--memory-model", type=str, default="gpt-4o-mini", help="Memory 模型名称")
+    
+    # Research Generator 配置
+    parser.add_argument("--research-api-key", type=str, default="empty", help="Research 模型 API Key")
+    parser.add_argument("--research-base-url", type=str, default="https://api.openai.com/v1", help="Research 模型 Base URL")
+    parser.add_argument("--research-model", type=str, default="gpt-4o-mini", help="Research 模型名称")
+    
+    # Working Generator 配置
+    parser.add_argument("--working-api-key", type=str, default="empty", help="Working 模型 API Key")
+    parser.add_argument("--working-base-url", type=str, default="https://api.openai.com/v1", help="Working 模型 Base URL")
+    parser.add_argument("--working-model", type=str, default="gpt-4o-mini", help="Working 模型名称")
+    
     args = parser.parse_args()
     
     print("=" * 60)
@@ -577,8 +621,13 @@ def main():
         print(f"错误: 开始索引 {args.start_idx} 必须小于结束索引 {args.end_idx}")
         return
     
-    # 定义 worker 函数用于并行处理
-    def _worker(sample_idx):
+    # 串行批量处理样本
+    sample_indices = list(range(args.start_idx, args.end_idx))
+    
+    print(f"开始串行处理样本...")
+    
+    all_results = []
+    for sample_idx in tqdm(sample_indices, desc="处理样本"):
         sample = all_samples[sample_idx]
         print(f"\n{'='*80}")
         print(f"开始处理样本 {sample_idx}/{len(all_samples)-1} (范围: {args.start_idx}-{args.end_idx-1})")
@@ -589,29 +638,28 @@ def main():
                 sample, 
                 sample_idx, 
                 args.outdir,
+                args.memory_api_key,
+                args.memory_base_url,
+                args.memory_model,
+                args.research_api_key,
+                args.research_base_url,
+                args.research_model,
+                args.working_api_key,
+                args.working_base_url,
+                args.working_model,
                 max_tokens=args.max_tokens,
                 embedding_model_path=args.embedding_model_path
             )
             print(f"[OK] 样本 {sample_idx} 处理完成")
-            return result
+            all_results.append(result)
         except Exception as e:
             print(f"[ERROR] 样本 {sample_idx} 处理失败: {e}")
             import traceback
             traceback.print_exc()
-            return {
+            all_results.append({
                 "sample_id": sample.get("_id", f"sample-{sample_idx}"),
                 "error": str(e)
-            }
-    
-    # 串行批量处理样本
-    sample_indices = list(range(args.start_idx, args.end_idx))
-    
-    print(f"开始串行处理样本...")
-    
-    all_results = []
-    for sample_idx in tqdm(sample_indices, desc="处理样本"):
-        result = _worker(sample_idx)
-        all_results.append(result)
+            })
     
     # 统计结果
     f1_scores = []
