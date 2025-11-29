@@ -163,7 +163,7 @@ gen_config = OpenAIGeneratorConfig(
     temperature=0.3,
     max_tokens = 256
 )
-generator = OpenAIGenerator(gen_config.__dict__)
+generator = OpenAIGenerator.from_config(gen_config)
 
 # 2. Create memory and page stores
 memory_store = InMemoryMemoryStore()
@@ -253,7 +253,7 @@ research_agent = ResearchAgent(**research_agent_kwargs)
 
 # 7. Perform research
 research_result = research_agent.research(
-    "What is the difference between ML and DL?"
+    request="What is the difference between ML and DL?"
 )
 
 research_summary = research_result.integrated_memory
