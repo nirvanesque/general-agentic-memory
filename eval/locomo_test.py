@@ -57,7 +57,8 @@ def extract_sessions(conv_obj: Dict[str, Any]) -> List[Tuple[int, str, List[Dict
         m = re.match(r'^session_(\d+)$', k)
         if not (m and isinstance(v, list)):
             continue
-        idx = int(m.group(1))
+        original_idx = int(m.group(1))
+        idx = original_idx - 1
         ts = conv_obj.get(f"session_{idx}_date_time", "")
         ssum = conv_obj.get(f"session_{idx}_summary", None)
         sessions.append((idx, ts, v, ssum if isinstance(ssum, str) and ssum.strip() else None))
