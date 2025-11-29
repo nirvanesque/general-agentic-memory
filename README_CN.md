@@ -96,7 +96,10 @@ general-agentic-memory/
 │   ├── eval_narrativeqa.sh
 │   ├── eval_locomo.sh
 │   ├── eval_ruler.sh
-│   └── eval_all.sh
+│   └── download_data.sh
+├── download_data/                # 数据下载脚本
+│   ├── download_narrativeqa.py  # NarrativeQA 下载脚本
+│   └── download_ruler.py       # RULER 下载脚本
 ├── examples/                     # 使用示例
 │   └── quickstart/              # 快速开始示例
 │       ├── README.md            # 示例文档

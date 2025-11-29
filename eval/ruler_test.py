@@ -215,7 +215,7 @@ def _smart_split_by_tokens(text: str, tokens: List[int], max_tokens: int, tokeni
         return [f"[Session 1]\n{text}"]
     
     # 直接按照 token 索引切分
-    session_id = 1
+    session_id = 0
     start_idx = 0
     
     while start_idx < len(tokens):
@@ -246,7 +246,7 @@ def _fallback_char_split(text: str, max_tokens: int) -> List[str]:
     
     chunks = []
     current_start = 0
-    session_id = 1
+    session_id = 0
     
     while current_start < len(text):
         current_end = min(current_start + max_chars, len(text))

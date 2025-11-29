@@ -95,7 +95,10 @@ general-agentic-memory/
 │   ├── eval_narrativeqa.sh
 │   ├── eval_locomo.sh
 │   ├── eval_ruler.sh
-│   └── eval_all.sh
+│   └── download_data.sh
+├── download_data/                # Data download scripts
+│   ├── download_narrativeqa.py  # NarrativeQA download script
+│   └── download_ruler.py       # RULER download script
 ├── examples/                     # Usage examples
 │   └── quickstart/              # Quick start examples
 │       ├── README.md            # Examples documentation
@@ -319,7 +322,6 @@ export OPENAI_API_KEY="your_api_key_here"
 # 3. Run evaluations
 
 # HotpotQA
-# (adjust --data-path according to which split you want to use, e.g. data/hotpotqa/eval_400.json)
 bash scripts/eval_hotpotqa.sh
 
 # NarrativeQA
