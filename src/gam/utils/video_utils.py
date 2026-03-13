@@ -9,7 +9,6 @@ import queue
 from typing import List, Dict
 import re
 import os
-from decord import VideoReader, cpu
 import time
 import queue
 import threading
@@ -263,14 +262,19 @@ def get_subtitle_in_segment(subtitle_items: List[Dict], start_time, end_time):
 
 def get_video_property(video_path):
     try:
-        vr = VideoReader(video_path, ctx=cpu(0))
-        fps = vr.get_avg_fps()
-        frame_count = len(vr)
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+             raise Exception(f"Failed to open video {video_path}")
+             
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         duration = frame_count / fps if fps > 0 else 0
-        height, width, _ = vr[0].shape
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         resolution = f"{width}x{height}"
+        cap.release()
     except Exception as e:
-        print(f"Failed to get metadata for {video_path}: {e}")
+        # logging.error(f"Failed to get metadata for {video_path}: {e}")
         fps = None
         duration = None
         resolution = None
