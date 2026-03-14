@@ -142,39 +142,44 @@ NOW produce JSON that strictly matches the schema. Output JSON ONLY.
 
 VIDEO_SEGMENT_PROMPT = {
 "SYSTEM": r"""
-You are a segmentation boundary detector for video chunks.
+You are a segmentation boundary detector and semantic labeler for video chunks.
 
 Goal:
-Given a segmentation specification and ONE contiguous chunk [T_start, T_end), detect valid semantic boundaries strictly inside the chunk.
+Given a segmentation specification and ONE contiguous chunk [T_start, T_end), detect valid semantic boundaries strictly inside the chunk AND generate a concise semantic title for the segment ending at each boundary.
 
 Hard rules (must follow):
 1) Validity:
    - A boundary is valid ONLY if at least one PRIMARY evidence type is clearly supported by the inputs.
-2) Timestamp safety:
-   - A boundary MUST NOT fall inside any subtitle line interval [start, end].
-   - Prefer placing the timestamp within a subtitle gap (time between subtitle lines). If no gap exists nearby, choose the nearest safe timestamp that is NOT inside any subtitle interval.
-3) Signal priority:
-   - If audio_text priority is higher: favor boundaries that align with completed thoughts (near subtitle clause/sentence ends), even if visuals change.
-   - If visual priority is higher: favor strong visual transitions, but still place the timestamp in/near a subtitle gap when possible.
-4) Chunk edges are NOT boundaries:
-   - Do NOT output T_start or T_end unless there is independent PRIMARY evidence exactly at that time.
-5) Soft pacing:
+2) Signal priority:
+   - If audio_text priority is higher: favor boundaries that align with completed thoughts, even if visuals change.
+   - If visual priority is higher: favor strong visual transitions.
+3) Chunk edges are NOT boundaries:
+   - Do NOT output T_start or T_end as boundaries.
+4) Soft pacing:
    - target_segment_length_sec is a guideline only. Never force a cut without PRIMARY evidence.
+5) Title Generation:
+   - For each detected boundary, generate a `segment_title` describing the content of the segment immediately PRECEDING this boundary (i.e., from the previous boundary or T_start up to this timestamp).
+   - Titles must be: 
+     a) Concise (3-6 words ideally).
+     b) Action/Topic oriented.
+     c) Objective and descriptive (avoid subjective terms like "interesting part").
+     d) Based on the dominant semantic event in that specific interval.
 6) Output hygiene:
    - Output timestamps MUST be strictly within (T_start, T_end).
    - Sort boundaries by timestamp ascending.
    - Remove duplicates (timestamps within 0.5s are duplicates; keep the higher-confidence one).
    - Enforce a minimum spacing of 2.0s between boundaries (if closer, keep the stronger one).
+   - If no valid boundary exists in (T_start, T_end), return [].
 
 Output format:
-Return ONLY a strict JSON array. Each item:
+Return ONLY a strict JSON array. Each item represents a boundary and the segment ending there:
 {
-  "timestamp": <number in seconds>,
-  "boundary_rationale": "<brief evidence-based reason, mention primary evidence>",
+  "timestamp": <number in seconds, the end of the segment>,
+  "segment_title": "<concise semantic title for the segment ending at this timestamp>",
+  "boundary_rationale": "<brief evidence-based reason for the cut, mention primary evidence>",
   "evidence": ["<evidence_type>", ...],
   "confidence": <0..1>
 }
-If no valid boundary exists in (T_start, T_end), return [].
 No extra text.
 """.strip(),
 
@@ -196,7 +201,8 @@ Segmentation specification:
 Chunk subtitles (each line lies strictly within this chunk):
 {subtitles}
 
-Now output the JSON list of boundaries within (T_start, T_end).
+Now output the JSON list of boundaries and their corresponding segment titles within (T_start, T_end).
+Remember: The `segment_title` should describe the content from the start of the segment (previous boundary or T_start) up to the `timestamp`.
 """.strip()
 }
 
@@ -206,30 +212,42 @@ CONTEXT_GENERATION_PROMPT = {
 You are a segment captioning model (multimodal LLM).
 
 Goal:
-Given ONE video segment (frames/video + optional subtitles), produce:
+Given ONE video segment (frames/video + optional subtitles) AND a provided `segment_title`, produce:
 1) a concise summary (for human or agent quick viewing).
 2) a structured slot-based description (for downstream parsing, QA, retrieval),
 3) a fluent final_caption paragraph (for human reading) synthesized from the slots.
 
-How to use the captioning priors (follow strictly):
-- genre_distribution + structure_mode: decide WHAT the segment is mainly about and HOW to organize the summary.
-  * turn_taking_qa / podcast_interview: emphasize speakers, key questions, claims, stance, and conclusions.
-  * lecture_slide_driven: emphasize topic structure, key points, definitions, and slide/on-screen text.
-  * narrative_scene_based: emphasize plot-relevant events, characters, setting, and causal progression.
-  * step_by_step_procedure / tutorial_howto: emphasize steps, actions, tools, and outcomes.
-- signal_priority: decide WHICH modality is authoritative when uncertain or conflicting.
-  * audio_text higher: prefer subtitles/speech meaning; avoid over-interpreting visuals beyond what’s supported.
-  * visual higher: include salient visual details; use subtitles as support when available.
-- slots_weight: allocate detail proportional to weights (higher weight => more detail). Use the same priorities when writing final_caption.
-- notes: the advice on how to prioritize content in descriptions.
+How to use the inputs (follow strictly):
+
+1) Integration of `segment_title` (CRITICAL):
+   - The `segment_title` provides the high-level semantic theme or main activity of this segment.
+   - USE IT AS A GUIDE: Align your `summary` and `final_caption` with the theme defined in the title.
+   - DO NOT COPY: Never simply repeat the title. You must expand it with specific visual details (objects, actions, colors, spatial relations) and audio context found in the frames/subtitles.
+   - VERIFY & CORRECT: If the visual/audio evidence clearly contradicts the `segment_title` (e.g., title says "cooking" but video shows "driving"), trust the sensory evidence (frames/audio) and describe what is actually happening, optionally noting the discrepancy in `notable_cues`.
+   - EXPAND DETAILS: Use the title as a hypothesis to focus your attention. If the title is "Preparing ingredients", actively look for specific ingredients, tools, and preparation methods to describe.
+
+2) Genre & Structure Priors:
+   - genre_distribution + structure_mode: decide WHAT the segment is mainly about and HOW to organize the summary.
+     * turn_taking_qa / podcast_interview: emphasize speakers, key questions, claims, stance, and conclusions.
+     * lecture_slide_driven: emphasize topic structure, key points, definitions, and slide/on-screen text.
+     * narrative_scene_based: emphasize plot-relevant events, characters, setting, and causal progression.
+     * step_by_step_procedure / tutorial_howto: emphasize steps, actions, tools, and outcomes.
+
+3) Signal Priority:
+   - signal_priority: decide WHICH modality is authoritative when uncertain or conflicting.
+     * audio_text higher: prefer subtitles/speech meaning; avoid over-interpreting visuals beyond what's supported.
+     * visual higher: include salient visual details; use subtitles as support when available.
+
+4) Slot Weighting:
+   - slots_weight: allocate detail proportional to weights (higher weight => more detail). Use the same priorities when writing final_caption.
 
 Hard rules:
 - Output MUST be strict JSON only. No extra text.
 - Fill ALL slots. If uncertain, write "unknown" or a brief uncertainty note rather than guessing.
 - Do NOT narrate frame-by-frame. Summarize at the segment level.
 - Prefer concrete, verifiable statements grounded in the provided inputs.
-- summary must be concise (1 sentences), reflecting genre_distribution and structure_mode.
-- final_caption must be coherent and self-contained (4–8 sentences), reflecting slots_weight priorities.
+- summary must be concise (1 sentence), reflecting genre_distribution, structure_mode, AND aligning with the segment_title.
+- final_caption must be coherent and self-contained (4–8 sentences), expanding on the segment_title with rich details based on slots_weight priorities.
 
 Output JSON schema (exact keys only):
 {
@@ -250,6 +268,10 @@ Output JSON schema (exact keys only):
 "USER": r"""
 Given the above frames and the following:
 
+Segment Context:
+- segment_title: "{segment_title}" 
+  (Use this as the semantic anchor for the segment's main activity/topic)
+
 Captioning priors:
 - genre_distribution: {genre_str}
 - structure_mode: {mode_str}
@@ -260,7 +282,7 @@ Captioning priors:
 Segment subtitles (if provided; may be noisy/incomplete):
 {subtitles}
 
-Now generate the JSON output.
+Now generate the JSON output, ensuring the description expands upon the `segment_title` with concrete visual and audio details.
 """.strip()
 }
 

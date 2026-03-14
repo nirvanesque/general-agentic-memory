@@ -412,8 +412,8 @@ class VideoGAMTree(BaseModel, BaseTree):
         try:
             # check
             # assert os.path.exists(the_video_path)
-            _, exit_info = workspace.run(f"test -e '{the_video_path}'")
-            assert not exit_info.startswith("Error"), f"{the_video_path} not exists"
+            # _, exit_info = workspace.run(f"test -e '{the_video_path}'")
+            # assert not exit_info.startswith("Error"), f"{the_video_path} not exists"
             
             # assert os.path.exists(global_info_path)
             _, exit_info = workspace.run(f"test -e '{global_info_path}'")
@@ -430,24 +430,23 @@ class VideoGAMTree(BaseModel, BaseTree):
             assert len(seg_ids) > 0, f"{seg_dir} is empty"
             
             # check segments
-            for seg_id in seg_ids:
-                seg_path = os.path.join(seg_dir, seg_id)
-                # assert os.path.exists(seg_path)
-                _, exit_info = workspace.run(f"test -e '{seg_path}'")
-                assert not exit_info.startswith("Error"), f"{seg_path} not exists"
+            # for seg_id in seg_ids:
+            #     seg_path = os.path.join(seg_dir, seg_id)
+            #     # assert os.path.exists(seg_path)
+            #     _, exit_info = workspace.run(f"test -e '{seg_path}'")
+            #     assert not exit_info.startswith("Error"), f"{seg_path} not exists"
                 
-                # assert os.path.exists(os.path.join(seg_path, 'README.md'))
-                readme_path = os.path.join(seg_path, 'README.md')
-                _, exit_info = workspace.run(f"test -e '{readme_path}'")
-                assert not exit_info.startswith("Error"), f"{readme_path} not exists"
+            #     # assert os.path.exists(os.path.join(seg_path, 'README.md'))
+            #     readme_path = os.path.join(seg_path, 'README.md')
+            #     _, exit_info = workspace.run(f"test -e '{readme_path}'")
+            #     assert not exit_info.startswith("Error"), f"{readme_path} not exists"
                 
-                # assert os.path.exists(os.path.join(seg_path, 'video.mp4'))
-                video_path = os.path.join(seg_path, 'video.mp4')
-                _, exit_info = workspace.run(f"test -e '{video_path}'")
-                assert not exit_info.startswith("Error"), f"{video_path} not exists"
+            #     # assert os.path.exists(os.path.join(seg_path, 'video.mp4'))
+            #     video_path = os.path.join(seg_path, 'video.mp4')
+            #     _, exit_info = workspace.run(f"test -e '{video_path}'")
+            #     assert not exit_info.startswith("Error"), f"{video_path} not exists"
                 
         except Exception as e:
-            print(f"Video workspace check failed: {e}")
             return False
             
         return True

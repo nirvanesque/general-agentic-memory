@@ -16,18 +16,20 @@ SEG_TEMPLATE="""# Segment Context
 
 **SegID**: {seg_id}
 
-**Summary**: {summary}
-
 **Start Time**: {start_time}
 
 **End Time**: {end_time}
 
 **Duration**: {duration}
 
+**Title**: {seg_title}
+
+**Summary**: {summary}
+
 **Detail Description**: {detail}
 
 # Additional Files
-- Raw video for this segment: `./video.mp4`
+- Raw video for this segment: `./video_clip.mp4`
 - Subtitles for this segment: `./SUBTITLES.md`
 """.strip()
 
@@ -38,6 +40,7 @@ class VideoSeg:
     start_time: float  # 开始时间
     end_time: float  # 结束时间
     duration: float  # 持续时间
+    seg_title: str  # 分段标题
     summary: str  # 生成的标题
     detail: str  # 记忆/摘要
 
@@ -46,6 +49,7 @@ class VideoSeg:
         
         mk_str = SEG_TEMPLATE.format(
             seg_id=self.seg_id,
+            seg_title=self.seg_title,
             summary=self.summary,
             start_time=self.start_time,
             end_time=self.end_time,
@@ -60,33 +64,55 @@ class VideoSeg:
         
         return mk_str
 
-GLOBAL_TEMPLATE="""# Video Global Context
+# GLOBAL_TEMPLATE="""# Video Global Context
 
+# **Title**: {title}
+
+# **Abstract**: {abstract}
+
+# **Duration**: {duration} seconds
+
+# **Segments**: {num_segments}
+
+# # Segmentation Context
+
+# ## Structure and Content
+# - Each segment is saved in `./segments/seg_xxxx/`.
+# - Each segment includes:
+# - A `README.md` file containing the title, description, start time, and end time.
+# - A `video.mp4` file with the corresponding video clip.
+# - A `SUBTITLES.md` file with the corresponding subtitles.
+
+# ## Segments Quickview
+# Total: {num_segments} segments:
+# ```
+# {segments_quickview}
+# ```
+
+# # Additional Files
+# - Raw video: `./video.mp4`
+# - Detail information of segments: `./segments/`
+# - Full subtitles for this video: `./SUBTITLES.md`
+# """.strip()
+
+GLOBAL_TEMPLATE="""
 **Title**: {title}
-
-**Abstract**: {abstract}
 
 **Duration**: {duration} seconds
 
-**Segments**: {num_segments}
+**Abstract**: {abstract}
 
 # Segmentation Context
-
-## Structure and Content
-- Each segment is saved in `./segments/seg_xxxx/`.
+There are {num_segments} segments are extracted from raw video.
+- Each segment is saved in `./segments`.
 - Each segment includes:
 - A `README.md` file containing the title, description, start time, and end time.
 - A `video.mp4` file with the corresponding video clip.
 - A `SUBTITLES.md` file with the corresponding subtitles.
 
-## Segments Quickview
-Total: {num_segments} segments:
-```
-{segments_quickview}
-```
-
 # Additional Files
 - Raw video: `./video.mp4`
+- Detail information of segments: `./segments/`
 - Full subtitles for this video: `./SUBTITLES.md`
 """.strip()
 
@@ -107,7 +133,7 @@ class VideoGlobal:
             duration=self.duration,
             abstract=self.abstract,
             num_segments=self.num_segments,
-            segments_quickview=self.segments_quickview
+            # segments_quickview=self.segments_quickview
         )
         if not with_subtitles:
             mk_str = mk_str.replace(

@@ -160,7 +160,7 @@ class OpenAIGenerator(BaseGenerator):
                 
             except Exception as e:
                 if attempt < max_retries - 1:
-                    print(f"请求失败，重试中 ({attempt + 1}/{max_retries}): {str(e)}")
+                    print(f"Request failed, retry ({attempt + 1}/{max_retries}): {str(e)}")
                     print('=' * 50)
                     # 不要打印整个 msgs，因为可能非常长
                     msg_len = len(str(msgs))

@@ -130,6 +130,7 @@ class VideoGAMAgent(BaseGAMAgent):
         video_path: str, 
         seg_start_time: float, 
         seg_end_time: float, 
+        seg_title: str,
         seg_id: int, 
         subtitle_items: list,
         video_process_spec: VideoProcessSpec
@@ -149,6 +150,7 @@ class VideoGAMAgent(BaseGAMAgent):
             video_path: Path to the source video
             seg_start_time: Start time in seconds
             seg_end_time: End time in seconds
+            seg_title: title generated for this seg
             seg_id: Segment identifier (integer)
             subtitle_items: List of subtitle items
             video_process_spec: Configuration for video processing
@@ -173,7 +175,8 @@ class VideoGAMAgent(BaseGAMAgent):
             
             # 3. Prepare prompt
             system_prompt = CONTEXT_GENERATION_PROMPT['SYSTEM']
-            user_prompt = CONTEXT_GENERATION_PROMPT['USER'].format(subtitles=subtitles_str_in_seg, **asdict(caption_spec))
+            format_args = {**asdict(caption_spec), 'segment_title': seg_title}
+            user_prompt = CONTEXT_GENERATION_PROMPT['USER'].format(subtitles=subtitles_str_in_seg, **format_args)
 
             # 4. Generate
             out = self._generate_single_w_video(
@@ -196,11 +199,13 @@ class VideoGAMAgent(BaseGAMAgent):
             if 'final_caption' not in context or context['final_caption'] == '':
                 context['detail'] = f'No detail description for segment {seg_start_time} to {seg_end_time}'
             else:
-                context['detail'] = context['final_caption'] + '\n' + '\n'.join([f'{k}: {v}' for k, v in context['slots'].items()])
-            
+                # context['detail'] = context['final_caption'] + '\n' + '\n'.join([f'{k}: {v}' for k, v in context['slots'].items()])
+                context['detail'] = context['final_caption']
+                
             # 6. Save results
             video_seg = VideoSeg(
                 seg_id=f'seg_{seg_id:04d}',
+                seg_title=seg_title,
                 summary=context.get('summary', ''),
                 start_time=seg_start_time,
                 end_time=seg_end_time,
@@ -209,80 +214,37 @@ class VideoGAMAgent(BaseGAMAgent):
             )
             context_md = video_seg.to_markdown(with_subtitles=caption_with_subtitles)
             
-            self.workspace.run(f'mkdir -p segments/seg_{seg_id:04d}')
-            self.workspace.run(f'echo "{context_md}" > segments/seg_{seg_id:04d}/README.md')
+            seg_title_str = '_'.join(seg_title.split(' '))
+            save_name = f'seg{seg_id:04d}-{seg_title_str}-{seg_start_time:.2f}-{seg_end_time:.2f}s'
+            self.workspace.run(f'mkdir -p segments/{save_name}')
+            self.workspace.run(f'echo "{context_md}" > segments/{save_name}/README.md')
                 
             if subtitles_str_in_seg:
-                self.workspace.run(f'echo "{subtitles_str_in_seg}" > segments/seg_{seg_id:04d}/SUBTITLES.md')
+                self.workspace.run(f'echo "{subtitles_str_in_seg}" > segments/{save_name}/SUBTITLES.md')
             
-            output, exit_code = self.workspace.run(f'test -e segments/seg_{seg_id:04d}/video.mp4')
+            output, exit_code = self.workspace.run(f'test -e segments/{save_name}/video_clip.mp4')
 
             if not output and exit_code.startswith("Error"):
                 # Ensure segments/seg_{seg_id:04d} directory exists
                 # Call ffmpeg
-                output, exit_code = self.workspace.run(f'ffmpeg -y -loglevel quiet -ss {seg_start_time} -to {seg_end_time} -i {os.path.basename(video_path)} -c copy segments/seg_{seg_id:04d}/video.mp4')
+                output, exit_code = self.workspace.run(f'ffmpeg -y -loglevel quiet -ss {seg_start_time} -to {seg_end_time} -i {os.path.basename(video_path)} -c copy segments/{save_name}/video_clip.mp4')
 
                 if not exit_code.endswith('0'):
                     raise Exception(f'ffmpeg failed with exit code {exit_code}: {output}')
             
-            return {'start_time': seg_start_time, 'end_time': seg_end_time, **context, 'token_usage': response['usage']['total_tokens']}
+            return {'start_time': seg_start_time, 'end_time': seg_end_time, 'seg_title': seg_title, **context, 'token_usage': response['usage']['total_tokens']}
         except Exception as e:
             print(f"❌ Error processing segment {seg_id} ({seg_start_time}-{seg_end_time}): {e}")
             return {
                 'start_time': seg_start_time,
                 'end_time': seg_end_time,
+                'seg_title': f'Error: {e}',
                 'summary': f'Error: {e}',
                 'detail': f'Error: {e}',
                 'token_usage': 0,
             }
 
-    def _generate_organize_context(
-            self, 
-            video_path: str, 
-            segmentation_info: list, 
-            chunk_start_time: float = 0, 
-            start_seg_id: int = 0, 
-            subtitle_items: list = None, 
-            video_process_spec: VideoProcessSpec = None
-        ) -> list[dict]:
-        """
-        Orchestrate the generation of context for a batch of segments.
-        
-        Args:
-            video_path: Path to source video
-            segmentation_info: List of segment definitions (timestamps)
-            chunk_start_time: Start time offset for this chunk
-            start_seg_id: Starting ID for segments in this batch
-            subtitle_items: Subtitles
-            video_process_spec: Processing configuration
-            
-        Returns:
-            List of generated context dictionaries for each segment
-        """
-        
-        tasks = []
-        seg_start_time = chunk_start_time
-        
-        for i, item in enumerate(segmentation_info):
-            seg_end_time = item['timestamp']
-            seg_id = start_seg_id + i
-            tasks.append((video_path, seg_start_time, seg_end_time, seg_id, subtitle_items, video_process_spec))
-            seg_start_time = seg_end_time
-            
-        all_contexts_local = []
-        # Use ThreadPoolExecutor to parallelize processing
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(segmentation_info)//2) as executor:
-            futures = [executor.submit(self._process_segment_task, *task) for task in tasks]
-            for future in concurrent.futures.as_completed(futures):
-                try:
-                    result = future.result()
-                    all_contexts_local.append(result)
-                except Exception as e:
-                    print(f"❌ Task failed: {e}")
-        
-        all_contexts_local.sort(key=lambda x: x['start_time'])
-        
-        return all_contexts_local
+
     
     def _prepare_messages_w_video(self, system_prompt, user_prompt, frame_base64_list, timestamps):
         """
@@ -814,102 +776,102 @@ class VideoGAMAgent(BaseGAMAgent):
             List of all segment contexts
         """
         
-        task_queue = queue.Queue()
-
         segment_spec = video_process_spec.segment_spec
         segmentation_sampling = asdict(video_process_spec.segmentation_sampling)
 
-        def context_consumer():
-            while True:
-                task = task_queue.get()
-                if task is None:
-                    task_queue.task_done()
-                    break
-                
-                v_path, seg_info, c_idx, c_start_time, s_seg_id, sub_items = task
-                try:
-                    st_ctx = time.time()
-                    contexts_local = self._generate_organize_context(
-                        video_path=v_path,
-                        segmentation_info=seg_info,
-                        chunk_start_time=c_start_time,
-                        start_seg_id=s_seg_id,
-                        subtitle_items=sub_items,
-                        video_process_spec=video_process_spec
-                        
-                    )
-                    if verbose:
-                        print(f"[Chunk {c_idx:03d}] Context generation completed in {time.time() - st_ctx:.2f}s | Token usage: {sum([ctx.get('token_usage', 0) for ctx in contexts_local])}")
-                    all_contexts.extend(contexts_local)
-                except Exception as e:
-                    print(f"❌ [Segment {c_idx:03d}] Error in context_consumer: {e}")
-                finally:
-                    task_queue.task_done()
-
-        consumer_thread = threading.Thread(target=context_consumer, daemon=True)
-        consumer_thread.start()
-
         all_contexts = []
+        futures = []
+        
         chunk_start_time = 0
         total_segments_count = 0
         c_idx = 0
-        try:
-            while True:
+        
+        # Use a global ThreadPoolExecutor for segments processing
+        # This avoids creating a new executor for each chunk and allows better load balancing
+        max_workers = 12
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            try:
+                while True:
+                    chunk_end_time = min(chunk_start_time + chunk_size, duration_int)
+                    st = time.time()
+                    
+                    # 1. Generate Segmentation for this Chunk (Producer)
+                    try:
+                        _, subtitles_str_in_seg = get_subtitle_in_segment(subtitle_items, chunk_start_time, chunk_end_time)
+                        system_prompt = VIDEO_SEGMENT_PROMPT['SYSTEM']
+                        user_prompt = VIDEO_SEGMENT_PROMPT['USER'].format(t_start=chunk_start_time, t_end=chunk_end_time, subtitles=subtitles_str_in_seg, **asdict(segment_spec))
+                        
+                        out = self._generate_single_w_video(
+                            system_prompt=system_prompt,
+                            user_prompt=user_prompt,
+                            video_path=video_path,
+                            start_time=chunk_start_time,
+                            end_time=chunk_end_time,
+                            video_sampling=segmentation_sampling,
+                            generator=self.segmentor,
+                        )
+                        
+                        generated_text = out['text']
+                        response = out['response']
+                        segmentation_info = self.parse_response(generated_text)
+                        segmentation_info = self.revise_segmentation_info(segmentation_info, chunk_start_time=chunk_start_time, chunk_end_time=chunk_end_time)
+                        
+                    except (AssertionError, Exception) as e:
+                        print(f"❌ [Chunk {c_idx:03d}] Failed to generate valid segmentation info: {e}")
+                        # If segmentation fails, we might want to skip or stop. 
+                        # For now, let's stop to avoid infinite loops or bad state
+                        break
+                    
+                    if verbose:
+                        print(f"[Chunk {c_idx:03d}] Segmentation generated in {time.time() - st:.2f}s | Segments found: {len(segmentation_info)} | Token usage: {response['usage']['total_tokens']}")
+
+                    if chunk_end_time >= duration_int:
+                        segmentation_info.append({
+                            'timestamp': chunk_end_time,
+                            'segment_title': 'ending'  # TODO: require additional process logic for the last segment
+                        })
+                    # print(f'chunk {c_idx} finished. {time.time() - st:.2f}s')
+                    # 2. Submit Segment Tasks to Executor (Consumer Pool)
+                    seg_start_time = chunk_start_time
+                    for i, item in enumerate(segmentation_info):
+                        seg_end_time = item['timestamp']
+                        seg_title = item['segment_title']
+                        seg_id = total_segments_count + 1 + i
+                        
+                        future = executor.submit(
+                            self._process_segment_task,
+                            video_path=video_path,
+                            seg_start_time=seg_start_time,
+                            seg_end_time=seg_end_time,
+                            seg_title=seg_title,
+                            seg_id=seg_id,
+                            subtitle_items=subtitle_items,
+                            video_process_spec=video_process_spec
+                        )
+                        futures.append(future)
+                        seg_start_time = seg_end_time
+
+                    total_segments_count += len(segmentation_info)
+                    chunk_start_time = segmentation_info[-1]['timestamp']
+                    c_idx += 1
+                    # print(f'Async {c_idx} chunk submitted. {time.time() - st:.2f}s')
+                    if chunk_end_time >= duration_int:
+                        break
+            
+            finally:
+                pass
                 
-                chunk_end_time = min(chunk_start_time + chunk_size, duration_int)
-                st = time.time()                
-                segmentation_info = None
-                st = time.time()
+            # Collect results
+            for future in concurrent.futures.as_completed(futures):
                 try:
+                    res = future.result()
+                    all_contexts.append(res)
+                except Exception as e:
+                    print(f"❌ Segment processing failed: {e}")
 
-                    _, subtitles_str_in_seg = get_subtitle_in_segment(subtitle_items, chunk_start_time, chunk_end_time)
-                    system_prompt = VIDEO_SEGMENT_PROMPT['SYSTEM']
-                    user_prompt = VIDEO_SEGMENT_PROMPT['USER'].format(t_start=chunk_start_time, t_end=chunk_end_time, subtitles=subtitles_str_in_seg, **asdict(segment_spec))
-                    
-                    out = self._generate_single_w_video(
-                        system_prompt=system_prompt,
-                        user_prompt=user_prompt,
-                        video_path=video_path,
-                        start_time=chunk_start_time,
-                        end_time=chunk_end_time,
-                        video_sampling=segmentation_sampling,
-                        generator=self.segmentor,
-                    )
-                    
-                    generated_text = out['text']
-                    response = out['response']
-                    segmentation_info = self.parse_response(generated_text)
-                    segmentation_info = self.revise_segmentation_info(segmentation_info, chunk_start_time=chunk_start_time, chunk_end_time=chunk_end_time)
-                    
-                except (AssertionError, Exception) as e:
-                    raise RuntimeError(f"Failed to generate valid segmentation info.")
-                
-                if verbose:
-                    print(f"[Chunk {c_idx:03d}] Segmentation generated in {time.time() - st:.2f}s | Segments found: {len(segmentation_info)} | Token usage: {response['usage']['total_tokens']}")
-
-                if chunk_end_time >= duration_int:
-                    segmentation_info.append({
-                        'timestamp': chunk_end_time,
-                    })
-
-                task_queue.put((
-                    video_path,
-                    segmentation_info,
-                    c_idx,
-                    chunk_start_time,
-                    total_segments_count + 1,
-                    subtitle_items,
-                ))
-                
-                total_segments_count += len(segmentation_info)
-                chunk_start_time = segmentation_info[-1]['timestamp']
-                c_idx += 1
-                
-                if chunk_end_time >= duration_int:
-                    break
-        finally:
-            task_queue.put(None)
-            consumer_thread.join()
+        # Sort by start time to ensure order
+        all_contexts.sort(key=lambda x: x['start_time'])
             
         return all_contexts
     
@@ -926,7 +888,7 @@ class VideoGAMAgent(BaseGAMAgent):
         st = time.time()
         system_prompt = VIDEO_GLOBAL_PROMPT['SYSTEM']
         segments_description = '\n'.join([
-            f'- segments{seg_id+1:04d}: {seg["start_time"]:.1f} - {seg["end_time"]:.1f} seconds: {seg["detail"]}'
+            f'- segments{seg_id+1:04d}: {seg["start_time"]:.1f} - {seg["end_time"]:.1f} seconds\nTitle: {seg["seg_title"]}\nDetail Description: {seg["detail"]}\n'
             for seg_id, seg in enumerate(all_contexts)
         ])
         user_prompt = VIDEO_GLOBAL_PROMPT['USER'].format(segments_description=segments_description)
@@ -1032,10 +994,11 @@ class VideoGAMAgent(BaseGAMAgent):
             Result object containing statistics and success status
         """
         # Initilize workspace: Prepare information for segmentor
-        workspace_dir = self.workspace.root_path
-        video_path = os.path.join(workspace_dir, 'video.mp4')
-        srt_path = os.path.join(workspace_dir, 'subtitles.srt')
-        metadata_path = os.path.join(workspace_dir, 'metadata.json')
+        workspace_dir = self.workspace.root_path # workspace_dir: 是一个字符串
+        # 获取这个目录下的 mp4 文件
+        video_path = str(list(Path(workspace_dir).glob('*.mp4'))[0])
+        srt_files = list(Path(workspace_dir).glob('*.srt'))
+        srt_path = str(srt_files[0]) if srt_files else ''
 
         # Prepare text content related to video
         ## Subtitles
@@ -1043,9 +1006,7 @@ class VideoGAMAgent(BaseGAMAgent):
         if caption_with_subtitles:
             with open(os.path.join(workspace_dir, 'SUBTITLES.md'), 'w') as f:
                 f.write(subtitles_str)
-        ## Metadata
-        metadata = read_json(metadata_path)
-            
+
         ## Video property
         video_info = get_video_property(video_path)
         duration_int = int(video_info['duration'])
@@ -1119,7 +1080,7 @@ class VideoGAMAgent(BaseGAMAgent):
         Video GAM only support full creation now.
         
         Args:
-            input_path: Input directory containing video.mp4, subtitles.srt (optional), metadata.json (optional).
+            input_path: Input directory containing video.mp4, subtitles.srt (optional).
             verbose: Whether to print verbose output.
             caption_with_subtitles: Whether to include subtitles in the caption generation.
         """
@@ -1136,7 +1097,6 @@ class VideoGAMAgent(BaseGAMAgent):
             # Check for required files
             mp4_files = list(input_path.glob('*.mp4'))
             srt_files = list(input_path.glob('*.srt'))
-            metadata_files = list(input_path.glob('metadata.json'))
 
             if len(mp4_files) != 1:
                 raise ValueError(f"Expected exactly one .mp4 file in {input_path}, found {len(mp4_files)}")
@@ -1144,21 +1104,15 @@ class VideoGAMAgent(BaseGAMAgent):
             if len(srt_files) > 1 and verbose:
                 print(f"⚠️ Warning: Multiple .srt files found in {input_path}. Using the first one.")
             
-            if len(metadata_files) > 1 and verbose:
-                print(f"⚠️ Warning: Multiple metadata.json files found in {input_path}. Using the first one.")
-            
             # Copy files to workspace
             # Ensure workspace root is a Path object for joining, but convert to str for copy_to_workspace
             workspace_root = Path(self.workspace.root_path)
             
-            self.workspace.copy_to_workspace(str(mp4_files[0]), str(workspace_root / 'video.mp4'))
+            self.workspace.copy_to_workspace(str(mp4_files[0]), str(workspace_root / mp4_files[0].name))
             
             if srt_files:
-                self.workspace.copy_to_workspace(str(srt_files[0]), str(workspace_root / 'subtitles.srt'))
+                self.workspace.copy_to_workspace(str(srt_files[0]), str(workspace_root / srt_files[0].name))
             
-            if metadata_files:
-                self.workspace.copy_to_workspace(str(metadata_files[0]), str(workspace_root / 'metadata.json'))
-                
             if verbose:
                 print(f"✅ Files copied to workspace: {workspace_root}")
         elif video_path:
@@ -1172,7 +1126,7 @@ class VideoGAMAgent(BaseGAMAgent):
             # Copy video to workspace
             workspace_root = Path(self.workspace.root_path)
             
-            self.workspace.copy_to_workspace(str(video_path), str(workspace_root / 'video.mp4'))
+            self.workspace.copy_to_workspace(str(video_path), str(workspace_root / video_path.name))
             
             if subtitle_path:
                 subtitle_path = Path(subtitle_path)
@@ -1183,11 +1137,11 @@ class VideoGAMAgent(BaseGAMAgent):
                     print(f"📂 Processing subtitle from: {subtitle_path}")
                 
                 # Copy subtitle to workspace
-                self.workspace.copy_to_workspace(str(subtitle_path), str(workspace_root / 'subtitles.srt'))
+                self.workspace.copy_to_workspace(str(subtitle_path), str(workspace_root / subtitle_path.name))
                 
             if verbose:
                 print(f"✅ Files copied to workspace: {workspace_root}")
-    
+
         return self._create(
             verbose=verbose,
             caption_with_subtitles=caption_with_subtitles,
